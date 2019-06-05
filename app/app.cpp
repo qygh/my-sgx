@@ -25,7 +25,7 @@
 
 #include "app.h"
 #include "utils.h"
-#include "ocalls.h"
+//include "ocalls.h"
 #include "debug.h"
 #include "wallet.h"
 #include "enclave.h"
@@ -107,6 +107,13 @@ int main(int argc, char** argv) {
     }
     info_print("Enclave successfully initilised.");
 
+    ecall_status = ecall_test_crypto(eid, &ret);
+    if (ecall_status != SGX_SUCCESS || is_error(ret)) {
+        error_print("ecall_test_crypto failed.");
+    }
+    else {
+        info_print("test_crypto succeded.");
+    }
 
     ////////////////////////////////////////////////
     // read input arguments 

@@ -25,6 +25,8 @@ enclave {
 
     // define ECALLs
     trusted {
+        public int ecall_test_crypto();
+
         /**
          * @brief      Creates a new wallet with the provided master-password.
          *

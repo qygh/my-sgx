@@ -24,7 +24,349 @@
 #include "wallet.h"
 
 #include "sgx_tseal.h"
+#include "sgx_tcrypto.h"
 #include "sealing/sealing.h"
+
+#include "stdio.h"
+#include "ipp/ippcp.h"
+
+int ecall_test_crypto() {
+    ocall_debug_print("\n\n\n");
+    ocall_debug_print("test_crypto called");
+
+    sgx_status_t ret;
+
+    ippsECCPCheckPoint(NULL, NULL, NULL);
+
+    /* Test random number generation */
+    uint32_t rval = 0;
+    ret = sgx_read_rand((unsigned char *) &rval, sizeof(rval));
+    if(ret != SGX_SUCCESS) {
+        ocall_debug_print("sgx_read_rand failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    char msg[100] = {0};
+    snprintf(msg, sizeof(msg), "random number: %u", rval);
+    ocall_debug_print(msg);
+
+    /* Test EC crypto */
+    sgx_ecc_state_handle_t ech;
+    ret = sgx_ecc256_open_context(&ech);
+    if(ret != SGX_SUCCESS) {
+        ocall_debug_print("sgx_ecc256_open_context failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("sgx_ecc256_open_context succeeded");
+    }
+
+    ret = sgx_ecc256_close_context(ech);
+    if(ret != SGX_SUCCESS) {
+        ocall_debug_print("sgx_ecc256_close_context failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("sgx_ecc256_close_context succeeded");
+    }
+
+    /* Test IPP */
+    int psize = 0;
+    IppStatus pstatus;
+
+    // get IppsECCPState context size in bytes
+    pstatus = ippsECCPGetSizeStd256r1(&psize);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPGetSizeStd256r1 failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    snprintf(msg, sizeof(msg), "IppsECCPState size: %d", psize);
+    ocall_debug_print(msg);
+
+    // allocate memory for ec context
+    IppsECCPState* ec = (IppsECCPState*)malloc(psize);
+    if(ec == NULL) {
+        ocall_debug_print("malloc failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    // initialise ec context
+    pstatus = ippsECCPInitStd256r1(ec);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPInitStd256r1 failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsECCPInitStd256r1 succeeded");
+    }
+
+    // set ec context
+    pstatus = ippsECCPSetStd256r1(ec);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPSetStd256r1 failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsECCPSetStd256r1 succeeded");
+    }
+
+    // get ec order bit size
+    int ec_order_bit_size = 0;
+    pstatus = ippsECCPGetOrderBitSize(&ec_order_bit_size, ec);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPGetOrderBitSize failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    int ec_order_size = 1 + ((ec_order_bit_size - 1) / 8);
+
+    snprintf(msg, sizeof(msg), "EC order bit size: %d", ec_order_bit_size);
+    ocall_debug_print(msg);
+
+    snprintf(msg, sizeof(msg), "EC order size: %d", ec_order_size);
+    ocall_debug_print(msg);
+
+    // get IppsBigNumState context size in bytes
+    int bnsize = 0;
+
+    pstatus = ippsBigNumGetSize(ec_order_size, &bnsize);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumGetSize failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    snprintf(msg, sizeof(msg), "IppsBigNumState size: %d", bnsize);
+    ocall_debug_print(msg);
+
+    // allocate memory for bn
+    int cofactor = 0;
+
+    IppsBigNumState* tmp = (IppsBigNumState*)malloc(bnsize);
+    if(tmp == NULL) {
+        ocall_debug_print("malloc failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsBigNumInit(ec_order_size, tmp);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumInit failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    IppsBigNumState* q = (IppsBigNumState*)malloc(bnsize);
+    if(q == NULL) {
+        ocall_debug_print("malloc failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsBigNumInit(ec_order_size, q);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumInit failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    IppsBigNumState* gx = (IppsBigNumState*)malloc(bnsize);
+    if(gx == NULL) {
+        ocall_debug_print("malloc failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsBigNumInit(ec_order_size, gx);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumInit failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    IppsBigNumState* gy = (IppsBigNumState*)malloc(bnsize);
+    if(gy == NULL) {
+        ocall_debug_print("malloc failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsBigNumInit(ec_order_size, gy);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumInit failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    IppsBigNumState* d = (IppsBigNumState*)malloc(bnsize);
+    if(d == NULL) {
+        ocall_debug_print("malloc d failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsBigNumInit(ec_order_size, d);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumInit d failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    IppsBigNumState* e = (IppsBigNumState*)malloc(bnsize);
+    if(e == NULL) {
+        ocall_debug_print("malloc e failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsBigNumInit(ec_order_size, e);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsBigNumInit e failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    // get q, gx, gy
+    pstatus = ippsECCPGet(tmp, tmp, tmp, gx, gy, q, &cofactor, ec);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPGet failed");
+        ocall_debug_print(ippcpGetStatusString(pstatus));
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsECCPGet succeeded");
+    }
+
+    //free(tmp);
+
+    // get G
+
+    // get IppsECCPPoint context size in bytes
+    int ecpsize;
+    pstatus = ippsECCPPointGetSize(ec_order_bit_size, &ecpsize);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPPointGetSize failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    snprintf(msg, sizeof(msg), "IppsECCPPointState size: %d", ecpsize);
+    ocall_debug_print(msg);
+
+    // allocate memory for point context
+    IppsECCPPointState* G = (IppsECCPPointState*)malloc(ecpsize);
+    if(G == NULL) {
+        ocall_debug_print("malloc failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+
+    // initialise point context
+    pstatus = ippsECCPPointInit(ec_order_bit_size, G);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPPointInit failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsECCPPointInit succeeded");
+    }
+
+    // set point context
+    pstatus = ippsECCPSetPoint(gx, gy, G, ec);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPSetPoint failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsECCPSetPoint succeeded");
+    }
+
+    // check point on ec
+    IppECResult cpres;
+    pstatus = ippsECCPCheckPoint(G, &cpres, ec);
+    if(pstatus != ippStsNoErr || cpres != ippECValid) {
+        ocall_debug_print("ippsECCPCheckPoint failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsECCPCheckPoint succeeded");
+    }
+
+    // generate d
+    Ipp32u ddata[ec_order_size/sizeof(Ipp32u)];
+    ret = sgx_read_rand((unsigned char *) &rval, ec_order_size);
+    if(ret != SGX_SUCCESS) {
+        ocall_debug_print("sgx_read_rand failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    }
+    pstatus = ippsSet_BN(IppsBigNumPOS, sizeof(ddata)/sizeof(Ipp32u), ddata, d);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsSet_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsSet_BN succeeded");
+    }
+
+    // generate e
+    pstatus = ippsModInv_BN(d, q, e);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsModInv_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsModInv_BN succeeded");
+    }
+
+
+    // check if inv of e == d
+    pstatus = ippsModInv_BN(e, q, tmp);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsModInv_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsModInv_BN succeeded");
+    }
+    Ipp32u comres;
+    pstatus = ippsCmp_BN(tmp, d, &comres);
+    if(pstatus != ippStsNoErr || comres != IS_ZERO) {
+        ocall_debug_print("ippsCmp_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsCmp_BN succeeded");
+    }
+
+    pstatus = ippsCmpZero_BN(tmp, &comres);
+    if(pstatus != ippStsNoErr || comres != GREATER_THAN_ZERO) {
+        ocall_debug_print("ippsCmpZero_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsCmpZero_BN succeeded");
+    }
+
+    pstatus = ippsCmpZero_BN(d, &comres);
+    if(pstatus != ippStsNoErr || comres != GREATER_THAN_ZERO) {
+        ocall_debug_print("ippsCmpZero_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsCmpZero_BN succeeded");
+    }
+
+    pstatus = ippsCmpZero_BN(e, &comres);
+    if(pstatus != ippStsNoErr || comres != GREATER_THAN_ZERO) {
+        ocall_debug_print("ippsCmpZero_BN failed");
+        ocall_debug_print("\n\n\n");
+        return ERR_FAIL_SEAL;
+    } else {
+        ocall_debug_print("ippsCmpZero_BN succeeded");
+    }
+
+    ocall_debug_print("test_crypto exiting");
+    ocall_debug_print("\n\n\n");
+
+    return RET_SUCCESS;
+}
 
 /**
  * @brief      Creates a new wallet with the provided master-password.
