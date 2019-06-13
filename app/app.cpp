@@ -25,11 +25,11 @@
 
 #include "app.h"
 #include "utils.h"
-//include "ocalls.h"
 #include "debug.h"
 #include "wallet.h"
 #include "enclave.h"
 #include "test.h"
+#include "ippcp.h"
 
 using namespace std;
 
@@ -95,6 +95,17 @@ int main(int argc, char** argv) {
     sgx_launch_token_t token = {0};
     int updated, ret;
     sgx_status_t ecall_status, enclave_status;
+
+    int psize = 0;
+    IppStatus pstatus = ippsECCPGetSizeStd256r1(&psize);
+    if(pstatus != ippStsNoErr) {
+        ocall_debug_print("ippsECCPGetSizeStd256r1 failed");
+        ocall_debug_print("\n\n\n");
+        return -1;
+    }
+    char msg[100];
+    snprintf(msg, sizeof(msg), "IppsECCPState size: %d", psize);
+    ocall_debug_print(msg);
 
 
     ////////////////////////////////////////////////

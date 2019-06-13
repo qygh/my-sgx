@@ -30,13 +30,51 @@
 #include "stdio.h"
 #include "ipp/ippcp.h"
 
+static int hello = 0;
+
+/*
+ * T : Testing Facility
+ * U : User
+ * CA: Certification Authority
+ */
+
+/* T: Encrypted and authorized weights ct_i
+ *    A list of pairs of EC points
+ */
+static void* my_t_cts = NULL;
+
+/* T: Secret x used for computing weights ct_i
+ *    A number
+ */
+static void* my_t_x = NULL;
+
+
+void ecall_my_t_generate_x();
+
+void ecall_my_t_load_x();
+
+void ecall_my_t_load_weights();
+
+void ecall_test_print() {
+    ocall_debug_print("test_print called");
+}
+
 int ecall_test_crypto() {
     ocall_debug_print("\n\n\n");
     ocall_debug_print("test_crypto called");
 
+    ecall_test_print();
+
     sgx_status_t ret;
 
-    ippsECCPCheckPoint(NULL, NULL, NULL);
+    char msg[100] = {0};
+    snprintf(msg, sizeof(msg), "hello value : %d", hello);
+    ocall_debug_print(msg);
+
+    hello = 1;
+
+    snprintf(msg, sizeof(msg), "hello value : %d", hello);
+    ocall_debug_print(msg);
 
     /* Test random number generation */
     uint32_t rval = 0;
@@ -47,7 +85,6 @@ int ecall_test_crypto() {
         return ERR_FAIL_SEAL;
     }
 
-    char msg[100] = {0};
     snprintf(msg, sizeof(msg), "random number: %u", rval);
     ocall_debug_print(msg);
 

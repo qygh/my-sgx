@@ -29,6 +29,9 @@
 #
 #
 
+IPPCP_SDK = /opt/intel/ippcp/
+IPPCP_ARCH = intel64
+
 ######## SGX SDK Settings ########
 
 SGX_SDK ?= /opt/intel/sgxsdk
@@ -74,7 +77,7 @@ else
 endif
 
 App_Cpp_Files := app/app.cpp app/utils.cpp app/test.cpp
-App_Include_Paths := -Iapp -I$(SGX_SDK)/include -Iinclude -Itest
+App_Include_Paths := -Iapp -I$(SGX_SDK)/include -Iinclude -Itest -I$(IPPCP_SDK)/include
 
 App_C_Flags := $(SGX_COMMON_CFLAGS) -fPIC -Wno-attributes $(App_Include_Paths)
 
@@ -91,7 +94,7 @@ else
 endif
 
 App_Cpp_Flags := $(App_C_Flags) -std=c++11
-App_Link_Flags := $(SGX_COMMON_CFLAGS) -L$(SGX_LIBRARY_PATH) -l$(Urts_Library_Name) -lpthread
+App_Link_Flags := $(SGX_COMMON_CFLAGS) -L$(SGX_LIBRARY_PATH) -L$(IPPCP_SDK)/lib/$(IPPCP_ARCH) -l$(Urts_Library_Name) -lpthread -lippcp
 
 ifneq ($(SGX_MODE), HW)
 	App_Link_Flags += -lsgx_uae_service_sim
