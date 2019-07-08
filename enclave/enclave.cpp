@@ -38,6 +38,8 @@ static int hello = 0;
  * CA: Certification Authority
  */
 
+#define EC_ORDER_BIT_SIZE 256
+
 /*
  * Structure for common context
  */
@@ -46,6 +48,7 @@ struct common_context {
     int ec_context_size;
     int ec_order_bit_size;
     int ec_order_size;
+    int ec_order_u32_size;
     IppsECCPState *E;
 
     // q: Big number
@@ -158,6 +161,10 @@ static struct common_context context_common = {0};
 
 static struct offline_t_context context_offline_t = {0};
 
+static IppsBigNumState *create_bn_state(struct common_context *common);
+
+static int set_bn_random_value(struct common_context *common, IppsBigNumState *number);
+
 /*
  * Common input: E, q, G, n
  */
@@ -201,6 +208,43 @@ static void ecall_online_u_compute_ctres_pres_sres();
 static void ecall_online_ca_set_initial_input();
 
 static void ecall_online_ca_compute_res();
+
+
+static IppsBigNumState *create_bn_state(struct common_context *common) {
+    IppsBigNumState *n = (IppsBigNumState *) malloc(common->bn_context_size);
+    if (n == NULL) {
+        return NULL;
+    }
+
+    int ipp_status = ippsBigNumInit(common->ec_order_u32_size, n);
+    if (ipp_status != ippStsNoErr) {
+        free(n);
+
+        return NULL;
+    }
+
+    return n;
+}
+
+static int set_bn_random_value(struct common_context *common, IppsBigNumState *number) {
+    if (common == NULL || number == NULL) {
+        return -1;
+    }
+
+    // choose random value
+    Ipp32u x_rand_value[common->ec_order_u32_size];
+    sgx_status_t sgx_ret = sgx_read_rand((unsigned char *) &x_rand_value, common->ec_order_size);
+    if (sgx_ret != SGX_SUCCESS) {
+        return -1;
+    }
+
+    int ipp_status = ippsSet_BN(IppsBigNumPOS, common->ec_order_size / sizeof(Ipp32u), x_rand_value, number);
+    if (ipp_status != ippStsNoErr) {
+        return -1;
+    }
+
+    return 0;
+}
 
 int ecall_common_initialise(uint32_t n) {
     if (n < 1) {
@@ -253,9 +297,13 @@ int ecall_common_initialise(uint32_t n) {
     int ec_order_size = 1 + ((ec_order_bit_size - 1) / 8);
     context_common.ec_order_size = ec_order_size;
 
+    // get EC order size in number of 32-bit integers
+    int ec_order_u32_size = 1 + ((ec_order_bit_size - 1) / 32);
+    context_common.ec_order_u32_size = ec_order_u32_size;
+
     // get IppsBigNumState context size in bytes
     int bn_context_size = 0;
-    ipp_status = ippsBigNumGetSize(ec_order_size, &bn_context_size);
+    ipp_status = ippsBigNumGetSize(ec_order_u32_size, &bn_context_size);
     if (ipp_status != ippStsNoErr) {
         free(E);
 
@@ -264,23 +312,15 @@ int ecall_common_initialise(uint32_t n) {
     context_common.bn_context_size = bn_context_size;
 
     // allocate memory for temporary number
-    IppsBigNumState *tmp = (IppsBigNumState *) malloc(bn_context_size);
+    IppsBigNumState *tmp = create_bn_state(&context_common);
     if (tmp == NULL) {
         free(E);
 
         return -1;
     }
 
-    ipp_status = ippsBigNumInit(ec_order_size, tmp);
-    if (ipp_status != ippStsNoErr) {
-        free(E);
-        free(tmp);
-
-        return -1;
-    }
-
     // allocate memory for q
-    IppsBigNumState *q = (IppsBigNumState *) malloc(bn_context_size);
+    IppsBigNumState *q = create_bn_state(&context_common);
     if (q == NULL) {
         free(E);
         free(tmp);
@@ -289,17 +329,8 @@ int ecall_common_initialise(uint32_t n) {
     }
     context_common.q = q;
 
-    ipp_status = ippsBigNumInit(ec_order_size, q);
-    if (ipp_status != ippStsNoErr) {
-        free(E);
-        free(tmp);
-        free(q);
-
-        return -1;
-    }
-
     // allocate memory for gx
-    IppsBigNumState *gx = (IppsBigNumState *) malloc(bn_context_size);
+    IppsBigNumState *gx = create_bn_state(&context_common);
     if (gx == NULL) {
         free(E);
         free(tmp);
@@ -308,34 +339,13 @@ int ecall_common_initialise(uint32_t n) {
         return -1;
     }
 
-    ipp_status = ippsBigNumInit(ec_order_size, gx);
-    if (ipp_status != ippStsNoErr) {
-        free(E);
-        free(tmp);
-        free(q);
-        free(gx);
-
-        return -1;
-    }
-
     // allocate memory for gy
-    IppsBigNumState *gy = (IppsBigNumState *) malloc(bn_context_size);
+    IppsBigNumState *gy = create_bn_state(&context_common);
     if (gy == NULL) {
         free(E);
         free(tmp);
         free(q);
         free(gx);
-
-        return -1;
-    }
-
-    ipp_status = ippsBigNumInit(ec_order_size, gy);
-    if (ipp_status != ippStsNoErr) {
-        free(E);
-        free(tmp);
-        free(q);
-        free(gx);
-        free(gy);
 
         return -1;
     }
@@ -420,30 +430,15 @@ int ecall_common_initialise(uint32_t n) {
 
 int ecall_offline_t_initialise() {
     // allocate memory for x
-    IppsBigNumState *x = (IppsBigNumState *) malloc(context_common.bn_context_size);
+    IppsBigNumState *x = create_bn_state(&context_common);
     if (x == NULL) {
         return -1;
     }
     context_offline_t.x = x;
 
-    int ipp_status = ippsBigNumInit(context_common.ec_order_size, x);
-    if (ipp_status != ippStsNoErr) {
-        free(x);
-
-        return -1;
-    }
-
-    // generate random value for x
-    Ipp32u x_rand_value[context_common.ec_order_size / sizeof(Ipp32u)];
-    sgx_status_t sgx_ret = sgx_read_rand((unsigned char *) &x_rand_value, context_common.ec_order_size);
-    if (sgx_ret != SGX_SUCCESS) {
-        free(x);
-
-        return -1;
-    }
-
-    ipp_status = ippsSet_BN(IppsBigNumPOS, context_common.ec_order_size / sizeof(Ipp32u), x_rand_value, x);
-    if (ipp_status != ippStsNoErr) {
+    // choose random value for x
+    int ret = set_bn_random_value(&context_common, x);
+    if (ret < 0) {
         free(x);
 
         return -1;
@@ -457,10 +452,19 @@ void test_print() {
 }
 
 int ecall_test_crypto() {
-    char msg[100] = {0};
+    char msg[256] = {0};
 
     int my_ret = ecall_common_initialise(32);
     snprintf(msg, sizeof(msg), "ecall_common_initialise returned %d", my_ret);
+    ocall_debug_print(msg);
+
+    snprintf(msg, sizeof(msg),
+             "ec_order_size: %d, ec_order_bit_size: %d, ec_order_u32_size: %d, ec_context_size: %d",
+             context_common.ec_order_size, context_common.ec_order_bit_size, context_common.ec_order_u32_size,
+             context_common.ec_context_size);
+    ocall_debug_print(msg);
+    snprintf(msg, sizeof(msg), "bn_context_size: %d, point_context_size: %d", context_common.bn_context_size,
+             context_common.point_context_size);
     ocall_debug_print(msg);
 
     my_ret = ecall_offline_t_initialise();
@@ -471,6 +475,8 @@ int ecall_test_crypto() {
     ocall_debug_print("test_crypto called");
 
     test_print();
+
+    return 1;
 
     sgx_status_t ret;
 
