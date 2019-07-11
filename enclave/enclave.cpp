@@ -161,6 +161,8 @@ static struct common_context context_common = {0};
 
 static struct offline_t_context context_offline_t = {0};
 
+static struct offline_ca_context context_offline_ca = {0};
+
 static IppsBigNumState *create_bn_state(struct common_context *common);
 
 static int set_bn_random_value(struct common_context *common, IppsBigNumState *number);
@@ -170,10 +172,14 @@ static int set_bn_random_value(struct common_context *common, IppsBigNumState *n
  */
 int ecall_common_initialise(uint32_t n);
 
+static int common_initialise(struct common_context *common, uint32_t n);
+
 /*
  * Offline operations for T
  */
 int ecall_offline_t_initialise();
+
+static int offline_t_initialise(struct common_context *common, struct offline_t_context *offline_t);
 
 static void ecall_offline_t_set_Ws_and_compute_cts();
 
@@ -182,7 +188,9 @@ static void ecall_offline_t_get_x_and_cts();
 /*
  * Offline operations for CA
  */
-static void ecall_offline_ca_initialise();
+int ecall_offline_ca_initialise();
+
+static int offline_ca_initialise(struct common_context *common, struct offline_ca_context *offline_ca);
 
 static void ecall_offline_ca_set_ws_and_compute_Ws();
 
@@ -209,7 +217,9 @@ static void ecall_online_ca_set_initial_input();
 
 static void ecall_online_ca_compute_res();
 
-
+/*
+ * Create a BigNum state
+ */
 static IppsBigNumState *create_bn_state(struct common_context *common) {
     IppsBigNumState *n = (IppsBigNumState *) malloc(common->bn_context_size);
     if (n == NULL) {
@@ -226,6 +236,9 @@ static IppsBigNumState *create_bn_state(struct common_context *common) {
     return n;
 }
 
+/*
+ * Set a BigNum to random value
+ */
 static int set_bn_random_value(struct common_context *common, IppsBigNumState *number) {
     if (common == NULL || number == NULL) {
         return -1;
@@ -238,6 +251,7 @@ static int set_bn_random_value(struct common_context *common, IppsBigNumState *n
         return -1;
     }
 
+    // set random value
     int ipp_status = ippsSet_BN(IppsBigNumPOS, common->ec_order_size / sizeof(Ipp32u), x_rand_value, number);
     if (ipp_status != ippStsNoErr) {
         return -1;
@@ -247,10 +261,14 @@ static int set_bn_random_value(struct common_context *common, IppsBigNumState *n
 }
 
 int ecall_common_initialise(uint32_t n) {
+    return common_initialise(&context_common, n);
+}
+
+static int common_initialise(struct common_context *common, uint32_t n) {
     if (n < 1) {
         return -1;
     }
-    context_common.n = n;
+    common->n = n;
 
     // get EC context size in bytes
     int ec_context_size = 0;
@@ -258,14 +276,14 @@ int ecall_common_initialise(uint32_t n) {
     if (ipp_status != ippStsNoErr) {
         return -1;
     }
-    context_common.ec_context_size = ec_context_size;
+    common->ec_context_size = ec_context_size;
 
     // allocate memory for EC context
     IppsECCPState *E = (IppsECCPState *) malloc(ec_context_size);
     if (E == NULL) {
         return -1;
     }
-    context_common.E = E;
+    common->E = E;
 
     // initialise EC context
     ipp_status = ippsECCPInitStd256r1(E);
@@ -291,15 +309,23 @@ int ecall_common_initialise(uint32_t n) {
 
         return -1;
     }
-    context_common.ec_order_bit_size = ec_order_bit_size;
+
+    // EC order bit size must be EC_ORDER_BIT_SIZE
+    if (ec_order_bit_size != EC_ORDER_BIT_SIZE) {
+        free(E);
+
+        return -1;
+    }
+
+    common->ec_order_bit_size = ec_order_bit_size;
 
     // get EC order byte size
     int ec_order_size = 1 + ((ec_order_bit_size - 1) / 8);
-    context_common.ec_order_size = ec_order_size;
+    common->ec_order_size = ec_order_size;
 
     // get EC order size in number of 32-bit integers
     int ec_order_u32_size = 1 + ((ec_order_bit_size - 1) / 32);
-    context_common.ec_order_u32_size = ec_order_u32_size;
+    common->ec_order_u32_size = ec_order_u32_size;
 
     // get IppsBigNumState context size in bytes
     int bn_context_size = 0;
@@ -309,7 +335,7 @@ int ecall_common_initialise(uint32_t n) {
 
         return -1;
     }
-    context_common.bn_context_size = bn_context_size;
+    common->bn_context_size = bn_context_size;
 
     // allocate memory for temporary number
     IppsBigNumState *tmp = create_bn_state(&context_common);
@@ -327,7 +353,7 @@ int ecall_common_initialise(uint32_t n) {
 
         return -1;
     }
-    context_common.q = q;
+    common->q = q;
 
     // allocate memory for gx
     IppsBigNumState *gx = create_bn_state(&context_common);
@@ -377,7 +403,7 @@ int ecall_common_initialise(uint32_t n) {
 
         return -1;
     }
-    context_common.point_context_size = point_context_size;
+    common->point_context_size = point_context_size;
 
     // allocate memory for point context
     IppsECCPPointState *G = (IppsECCPPointState *) malloc(point_context_size);
@@ -390,7 +416,7 @@ int ecall_common_initialise(uint32_t n) {
 
         return -1;
     }
-    context_common.G = G;
+    common->G = G;
 
     // initialise point context
     ipp_status = ippsECCPPointInit(ec_order_bit_size, G);
@@ -429,17 +455,62 @@ int ecall_common_initialise(uint32_t n) {
 }
 
 int ecall_offline_t_initialise() {
+    return offline_t_initialise(&context_common, &context_offline_t);
+}
+
+static int offline_t_initialise(struct common_context *common, struct offline_t_context *offline_t) {
     // allocate memory for x
-    IppsBigNumState *x = create_bn_state(&context_common);
+    IppsBigNumState *x = create_bn_state(common);
     if (x == NULL) {
         return -1;
     }
-    context_offline_t.x = x;
+    offline_t->x = x;
 
     // choose random value for x
-    int ret = set_bn_random_value(&context_common, x);
+    int ret = set_bn_random_value(common, x);
     if (ret < 0) {
         free(x);
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int ecall_offline_ca_initialise() {
+    return offline_ca_initialise(&context_common, &context_offline_ca);
+}
+
+static int offline_ca_initialise(struct common_context *common, struct offline_ca_context *offline_ca) {
+    // allocate memory for d
+    IppsBigNumState *d = create_bn_state(common);
+    if (d == NULL) {
+        return -1;
+    }
+    context_offline_ca.d = d;
+
+    // choose random value for d
+    int ret = set_bn_random_value(common, d);
+    if (ret < 0) {
+        free(d);
+
+        return -1;
+    }
+
+    // allocate memory for e
+    IppsBigNumState *e = create_bn_state(common);
+    if (e == NULL) {
+        free(d);
+
+        return -1;
+    }
+    context_offline_ca.e = e;
+
+    // compute inverse of d
+    int ipp_status = ippsModInv_BN(d, common->q, e);
+    if (ipp_status != ippStsNoErr) {
+        free(d);
+        free(e);
 
         return -1;
     }
@@ -452,6 +523,10 @@ void test_print() {
 }
 
 int ecall_test_crypto() {
+    ocall_debug_print("\n\n\n");
+    ocall_debug_print("test_crypto called");
+    ocall_debug_print("\n\n\n");
+
     char msg[256] = {0};
 
     int my_ret = ecall_common_initialise(32);
@@ -471,12 +546,17 @@ int ecall_test_crypto() {
     snprintf(msg, sizeof(msg), "ecall_offline_t_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
-    ocall_debug_print("\n\n\n");
-    ocall_debug_print("test_crypto called");
+    my_ret = ecall_offline_ca_initialise();
+    snprintf(msg, sizeof(msg), "ecall_offline_ca_initialise returned %d", my_ret);
+    ocall_debug_print(msg);
 
-    test_print();
+    ocall_debug_print("\n\n\n");
+    ocall_debug_print("test_crypto exiting");
+    ocall_debug_print("\n\n\n");
 
     return 1;
+
+    test_print();
 
     sgx_status_t ret;
 
