@@ -85,7 +85,7 @@ struct offline_t_context {
  */
 struct offline_ca_context {
     // ws: Array of big numbers
-    IppsBigNumState **ws;
+    //IppsBigNumState **ws;
 
     // d: Big number
     IppsBigNumState *d;
@@ -157,15 +157,29 @@ struct online_ca_context {
     IppsECCPPointState **res;
 };
 
+/*
+ * Global structures
+ */
 static struct common_context context_common = {0};
 
 static struct offline_t_context context_offline_t = {0};
 
 static struct offline_ca_context context_offline_ca = {0};
 
-static IppsBigNumState *create_bn_state(struct common_context *common);
+/*
+ * Utils
+ */
+static IppsBigNumState *bn_create_state(struct common_context *common);
 
-static int set_bn_random_value(struct common_context *common, IppsBigNumState *number);
+static IppsBigNumState *bn_create_state_double_size(struct common_context *common);
+
+static int bn_set_value(struct common_context *common, IppsBigNumState *number, int u32_size);
+
+static int bn_set_value_u32(struct common_context *common, IppsBigNumState *number, uint32_t value);
+
+static int bn_set_value_random(struct common_context *common, IppsBigNumState *number);
+
+static IppsECCPPointState *point_create_state(struct common_context *common);
 
 /*
  * Common input: E, q, G, n
@@ -192,7 +206,10 @@ int ecall_offline_ca_initialise();
 
 static int offline_ca_initialise(struct common_context *common, struct offline_ca_context *offline_ca);
 
-static void ecall_offline_ca_set_ws_and_compute_Ws();
+int ecall_offline_ca_set_ws_and_compute_Ws(uint32_t *ws);
+
+static int
+offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint32_t *ws);
 
 static void ecall_offline_ca_get_d_and_Ws();
 
@@ -220,7 +237,7 @@ static void ecall_online_ca_compute_res();
 /*
  * Create a BigNum state
  */
-static IppsBigNumState *create_bn_state(struct common_context *common) {
+static IppsBigNumState *bn_create_state(struct common_context *common) {
     IppsBigNumState *n = (IppsBigNumState *) malloc(common->bn_context_size);
     if (n == NULL) {
         return NULL;
@@ -236,28 +253,80 @@ static IppsBigNumState *create_bn_state(struct common_context *common) {
     return n;
 }
 
-/*
- * Set a BigNum to random value
- */
-static int set_bn_random_value(struct common_context *common, IppsBigNumState *number) {
-    if (common == NULL || number == NULL) {
-        return -1;
+static IppsBigNumState *bn_create_state_double_size(struct common_context *common) {
+    IppsBigNumState *n = (IppsBigNumState *) malloc((common->bn_context_size) * 2);
+    if (n == NULL) {
+        return NULL;
     }
 
-    // choose random value
-    Ipp32u x_rand_value[common->ec_order_u32_size];
-    sgx_status_t sgx_ret = sgx_read_rand((unsigned char *) &x_rand_value, common->ec_order_size);
-    if (sgx_ret != SGX_SUCCESS) {
+    int ipp_status = ippsBigNumInit((common->ec_order_u32_size) * 2, n);
+    if (ipp_status != ippStsNoErr) {
+        free(n);
+
+        return NULL;
+    }
+
+    return n;
+}
+
+/*
+ * Set BigNum value from uint32_t array
+ */
+static int bn_set_value(struct common_context *common, IppsBigNumState *number, int u32_size, const uint32_t *value) {
+    if (common == NULL || number == NULL || u32_size < 1 || u32_size > common->ec_order_u32_size) {
         return -1;
     }
 
     // set random value
-    int ipp_status = ippsSet_BN(IppsBigNumPOS, common->ec_order_size / sizeof(Ipp32u), x_rand_value, number);
+    int ipp_status = ippsSet_BN(IppsBigNumPOS, u32_size, value, number);
     if (ipp_status != ippStsNoErr) {
         return -1;
     }
 
     return 0;
+}
+
+/*
+ * Set BigNum value from a uint32_t value
+ */
+static int bn_set_value_u32(struct common_context *common, IppsBigNumState *number, uint32_t value) {
+    return bn_set_value(common, number, 1, (const uint32_t *) &value);
+}
+
+/*
+ * Create a Point state
+ */
+static IppsECCPPointState *point_create_state(struct common_context *common) {
+    // allocate memory for point context
+    IppsECCPPointState *P = (IppsECCPPointState *) malloc(common->point_context_size);
+    if (P == NULL) {
+        return NULL;
+    }
+
+    // initialise point context
+    int ipp_status = ippsECCPPointInit(common->ec_order_bit_size, P);
+    if (ipp_status != ippStsNoErr) {
+        free(P);
+
+        return NULL;
+    }
+
+    return P;
+}
+
+/*
+ * Set a BigNum to random value
+ */
+static int bn_set_value_random(struct common_context *common, IppsBigNumState *number) {
+    // generate random value
+    Ipp32u rand_value[common->ec_order_u32_size];
+    sgx_status_t sgx_ret = sgx_read_rand((unsigned char *) &rand_value, common->ec_order_size);
+    if (sgx_ret != SGX_SUCCESS) {
+        return -1;
+    }
+
+    // set random value
+    return bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value);
 }
 
 int ecall_common_initialise(uint32_t n) {
@@ -338,7 +407,7 @@ static int common_initialise(struct common_context *common, uint32_t n) {
     common->bn_context_size = bn_context_size;
 
     // allocate memory for temporary number
-    IppsBigNumState *tmp = create_bn_state(&context_common);
+    IppsBigNumState *tmp = bn_create_state(&context_common);
     if (tmp == NULL) {
         free(E);
 
@@ -346,7 +415,7 @@ static int common_initialise(struct common_context *common, uint32_t n) {
     }
 
     // allocate memory for q
-    IppsBigNumState *q = create_bn_state(&context_common);
+    IppsBigNumState *q = bn_create_state(&context_common);
     if (q == NULL) {
         free(E);
         free(tmp);
@@ -356,7 +425,7 @@ static int common_initialise(struct common_context *common, uint32_t n) {
     common->q = q;
 
     // allocate memory for gx
-    IppsBigNumState *gx = create_bn_state(&context_common);
+    IppsBigNumState *gx = bn_create_state(&context_common);
     if (gx == NULL) {
         free(E);
         free(tmp);
@@ -366,7 +435,7 @@ static int common_initialise(struct common_context *common, uint32_t n) {
     }
 
     // allocate memory for gy
-    IppsBigNumState *gy = create_bn_state(&context_common);
+    IppsBigNumState *gy = bn_create_state(&context_common);
     if (gy == NULL) {
         free(E);
         free(tmp);
@@ -406,7 +475,7 @@ static int common_initialise(struct common_context *common, uint32_t n) {
     common->point_context_size = point_context_size;
 
     // allocate memory for point context
-    IppsECCPPointState *G = (IppsECCPPointState *) malloc(point_context_size);
+    IppsECCPPointState *G = point_create_state(common);
     if (G == NULL) {
         free(E);
         free(tmp);
@@ -417,19 +486,6 @@ static int common_initialise(struct common_context *common, uint32_t n) {
         return -1;
     }
     common->G = G;
-
-    // initialise point context
-    ipp_status = ippsECCPPointInit(ec_order_bit_size, G);
-    if (ipp_status != ippStsNoErr) {
-        free(E);
-        free(tmp);
-        free(q);
-        free(gx);
-        free(gy);
-        free(G);
-
-        return -1;
-    }
 
     // set point context
     ipp_status = ippsECCPSetPoint(gx, gy, G, E);
@@ -460,14 +516,14 @@ int ecall_offline_t_initialise() {
 
 static int offline_t_initialise(struct common_context *common, struct offline_t_context *offline_t) {
     // allocate memory for x
-    IppsBigNumState *x = create_bn_state(common);
+    IppsBigNumState *x = bn_create_state(common);
     if (x == NULL) {
         return -1;
     }
     offline_t->x = x;
 
     // choose random value for x
-    int ret = set_bn_random_value(common, x);
+    int ret = bn_set_value_random(common, x);
     if (ret < 0) {
         free(x);
 
@@ -483,14 +539,14 @@ int ecall_offline_ca_initialise() {
 
 static int offline_ca_initialise(struct common_context *common, struct offline_ca_context *offline_ca) {
     // allocate memory for d
-    IppsBigNumState *d = create_bn_state(common);
+    IppsBigNumState *d = bn_create_state(common);
     if (d == NULL) {
         return -1;
     }
     context_offline_ca.d = d;
 
     // choose random value for d
-    int ret = set_bn_random_value(common, d);
+    int ret = bn_set_value_random(common, d);
     if (ret < 0) {
         free(d);
 
@@ -498,7 +554,7 @@ static int offline_ca_initialise(struct common_context *common, struct offline_c
     }
 
     // allocate memory for e
-    IppsBigNumState *e = create_bn_state(common);
+    IppsBigNumState *e = bn_create_state(common);
     if (e == NULL) {
         free(d);
 
@@ -514,6 +570,86 @@ static int offline_ca_initialise(struct common_context *common, struct offline_c
 
         return -1;
     }
+
+    return 0;
+}
+
+int ecall_offline_ca_set_ws_and_compute_Ws(uint32_t *ws) {
+    if (ws == NULL) {
+        return -1;
+    }
+
+    return offline_ca_set_ws_and_compute_Ws(&context_common, &context_offline_ca, ws);
+}
+
+static int
+offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint32_t *ws) {
+    // allocate memory for array of pointers to points
+    IppsECCPPointState **Ws = (IppsECCPPointState **) calloc(common->n, sizeof(IppsECCPPointState * ));
+    if (Ws == NULL) {
+        return -1;
+    }
+
+    IppsBigNumState *bn_i_plus_w_plus_one = bn_create_state(common);
+    if (bn_i_plus_w_plus_one == NULL) {
+        free(Ws);
+
+        return -1;
+    }
+
+    IppsBigNumState *bn_exponent = bn_create_state_double_size(common);
+    if (bn_exponent == NULL) {
+        free(Ws);
+        free(bn_i_plus_w_plus_one);
+
+        return -1;
+    }
+
+    int failed = 0;
+    for (uint32_t i = 1; i <= common->n; i++) {
+        // allocate memory for Wi
+        IppsECCPPointState *W = point_create_state(common);
+        Ws[i - 1] = W;
+        if (W == NULL) {
+            failed = 1;
+            break;
+        }
+
+        uint32_t i_plus_w_plus_one = i + ws[i - 1] + 1;
+        int ret = bn_set_value_u32(common, bn_i_plus_w_plus_one, i_plus_w_plus_one);
+        if (ret < 0) {
+            failed = 1;
+            break;
+        }
+
+        int ipp_status = ippsMul_BN(offline_ca->e, bn_i_plus_w_plus_one, bn_exponent);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+
+        ipp_status = ippsECCPMulPointScalar(common->G, bn_exponent, W, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+    }
+
+    if (failed) {
+        // error, free everything
+        for (uint32_t i = 0; i < common->n; i++) {
+            free(Ws[i]);
+        }
+
+        free(Ws);
+        free(bn_i_plus_w_plus_one);
+        free(bn_exponent);
+
+        return -1;
+    }
+
+    free(bn_i_plus_w_plus_one);
+    free(bn_exponent);
 
     return 0;
 }
@@ -548,6 +684,14 @@ int ecall_test_crypto() {
 
     my_ret = ecall_offline_ca_initialise();
     snprintf(msg, sizeof(msg), "ecall_offline_ca_initialise returned %d", my_ret);
+    ocall_debug_print(msg);
+
+    uint32_t ws[1000];
+    for (int i = 0; i < 1000; i++) {
+        ws[i] = i;
+    }
+    my_ret = ecall_offline_ca_set_ws_and_compute_Ws(ws);
+    snprintf(msg, sizeof(msg), "ecall_offline_ca_set_ws_and_compute_Ws returned %d", my_ret);
     ocall_debug_print(msg);
 
     ocall_debug_print("\n\n\n");
