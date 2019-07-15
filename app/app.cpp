@@ -99,12 +99,12 @@ int main(int argc, char** argv) {
     int psize = 0;
     IppStatus pstatus = ippsECCPGetSizeStd256r1(&psize);
     if(pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPGetSizeStd256r1 failed");
+        ocall_debug_print("app: ippsECCPGetSizeStd256r1 failed");
         ocall_debug_print("\n\n\n");
         return -1;
     }
     char msg[100];
-    snprintf(msg, sizeof(msg), "IppsECCPState size: %d", psize);
+    snprintf(msg, sizeof(msg), "app: IppsECCPState size: %d", psize);
     ocall_debug_print(msg);
 
 

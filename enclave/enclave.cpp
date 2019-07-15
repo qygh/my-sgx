@@ -167,75 +167,94 @@ static struct offline_t_context context_offline_t = {0};
 static struct offline_ca_context context_offline_ca = {0};
 
 /*
- * Utils
+ * Operations for BigNum and Point
  */
-static IppsBigNumState *bn_create_state(struct common_context *common);
+static IppsBigNumState *bn_create_state(struct common_context *common); //Done
 
-static IppsBigNumState *bn_create_state_double_size(struct common_context *common);
+static IppsBigNumState *bn_create_state_double_size(struct common_context *common); //Done
 
-static int bn_set_value(struct common_context *common, IppsBigNumState *number, int u32_size);
+static int bn_set_value(struct common_context *common, IppsBigNumState *number, int u32_size); //Done
 
-static int bn_set_value_u32(struct common_context *common, IppsBigNumState *number, uint32_t value);
+static int bn_set_value_u32(struct common_context *common, IppsBigNumState *number, uint32_t value); //Done
 
-static int bn_set_value_random(struct common_context *common, IppsBigNumState *number);
+static int bn_set_value_random(struct common_context *common, IppsBigNumState *number); //Done
 
-static IppsECCPPointState *point_create_state(struct common_context *common);
+static IppsECCPPointState *point_create_state(struct common_context *common); //Done
 
 /*
  * Common input: E, q, G, n
  */
-int ecall_common_initialise(uint32_t n);
+int ecall_common_initialise(uint32_t n); //Done
 
-static int common_initialise(struct common_context *common, uint32_t n);
+static int common_initialise(struct common_context *common, uint32_t n); //Done
 
 /*
  * Offline operations for T
  */
-int ecall_offline_t_initialise();
+int ecall_offline_t_initialise(); //Done
 
-static int offline_t_initialise(struct common_context *common, struct offline_t_context *offline_t);
+static int offline_t_initialise(struct common_context *common, struct offline_t_context *offline_t); //Done
 
-static void ecall_offline_t_set_Ws_and_compute_cts();
+int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, const size_t Ws_data_size); //Done
 
-static void ecall_offline_t_get_x_and_cts();
+static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struct offline_t_context *offline_t,
+                                            const uint8_t *Ws_data, const size_t Ws_data_size); //Done
+
+static void ecall_offline_t_get_x_and_cts(); //TODO
 
 /*
  * Offline operations for CA
  */
-int ecall_offline_ca_initialise();
+int ecall_offline_ca_initialise(); //Done
 
-static int offline_ca_initialise(struct common_context *common, struct offline_ca_context *offline_ca);
+static int offline_ca_initialise(struct common_context *common, struct offline_ca_context *offline_ca); //Done
 
-int ecall_offline_ca_set_ws_and_compute_Ws(uint32_t *ws);
+int ecall_offline_ca_set_ws_and_compute_Ws(uint32_t *ws); //Done
 
 static int
-offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint32_t *ws);
+offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_ca_context *offline_ca,
+                                 uint32_t *ws); //Done
 
-static void ecall_offline_ca_get_d_and_Ws();
+int ecall_offline_ca_get_d_and_Ws(uint8_t *d_data, uint8_t *Ws_data, size_t Ws_data_size); //Done
+
+static int
+offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint8_t *d_data,
+                        uint8_t *Ws_data, size_t Ws_data_size); //Done
 
 /*
  * Online operations for T
  */
-static void ecall_online_t_set_initial_input();
+static void ecall_online_t_set_initial_input(); //TODO
 
-static void ecall_online_t_decrypt_res();
+static void ecall_online_t_decrypt_res(); //TODO
 
 /*
  * Online operations for U
  */
-static void ecall_online_u_set_initial_input();
+static void ecall_online_u_set_initial_input(); //TODO
 
-static void ecall_online_u_compute_ctres_pres_sres();
+static void ecall_online_u_compute_ctres_pres_sres(); //TODO
 
 /*
  * Online operations for CA
  */
-static void ecall_online_ca_set_initial_input();
+static void ecall_online_ca_set_initial_input(); //TODO
 
-static void ecall_online_ca_compute_res();
+static void ecall_online_ca_compute_res(); //TODO
 
 /*
- * Create a BigNum state
+ *
+ *
+ *
+ *
+ *
+ *
+ *
+ *
+ */
+
+/*
+ * Create a BigNum state ideal for EC_ORDER_BIT_SIZE bits
  */
 static IppsBigNumState *bn_create_state(struct common_context *common) {
     IppsBigNumState *n = (IppsBigNumState *) malloc(common->bn_context_size);
@@ -253,6 +272,9 @@ static IppsBigNumState *bn_create_state(struct common_context *common) {
     return n;
 }
 
+/*
+ * Create a BigNum state ideal for 2 * EC_ORDER_BIT_SIZE bits
+ */
 static IppsBigNumState *bn_create_state_double_size(struct common_context *common) {
     IppsBigNumState *n = (IppsBigNumState *) malloc((common->bn_context_size) * 2);
     if (n == NULL) {
@@ -315,7 +337,7 @@ static IppsECCPPointState *point_create_state(struct common_context *common) {
 }
 
 /*
- * Set a BigNum to random value
+ * Set BigNum value to random
  */
 static int bn_set_value_random(struct common_context *common, IppsBigNumState *number) {
     // generate random value
@@ -533,6 +555,162 @@ static int offline_t_initialise(struct common_context *common, struct offline_t_
     return 0;
 }
 
+int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, const size_t Ws_data_size) {
+    return offline_t_set_Ws_and_compute_cts(&context_common, &context_offline_t, Ws_data, Ws_data_size);
+}
+
+static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struct offline_t_context *offline_t,
+                                            const uint8_t *Ws_data, const size_t Ws_data_size) {
+    if (Ws_data == NULL || Ws_data_size < common->n * common->ec_order_size * 2) {
+        return -1;
+    }
+
+    IppsECCPPointState **Ws = (IppsECCPPointState **) calloc(common->n, sizeof(IppsECCPPointState * ));
+    if (Ws == NULL) {
+        return -1;
+    }
+    offline_t->Ws = Ws;
+
+    IppsECCPPointState **cts = (IppsECCPPointState **) calloc(2 * common->n, sizeof(IppsECCPPointState * ));
+    if (cts == NULL) {
+        free(Ws);
+
+        return -1;
+    }
+    offline_t->cts = cts;
+
+    int ipp_status = 0;
+
+    IppsBigNumState *x = bn_create_state(common);
+    if (x == NULL) {
+        free(Ws);
+        free(cts);
+
+        return -1;
+    }
+    IppsBigNumState *y = bn_create_state(common);
+    if (y == NULL) {
+        free(Ws);
+        free(cts);
+        free(x);
+
+        return -1;
+    }
+
+    int p_buffer_len = common->ec_order_u32_size;
+    uint32_t p_buffer[p_buffer_len];
+
+    IppsBigNumState *k = bn_create_state(common);
+    if (k == NULL) {
+        free(Ws);
+        free(cts);
+        free(x);
+        free(y);
+
+        return -1;
+    }
+
+    int failed = 0;
+    for (uint32_t i = 0; i < common->n; i++) {
+        // get W
+        size_t offset_x = i * common->ec_order_size;
+        memcpy(p_buffer, Ws_data + offset_x, common->ec_order_size);
+        int ret = bn_set_value(common, x, p_buffer_len, p_buffer);
+        if (ret < 0) {
+            failed = 1;
+            break;
+        }
+
+        size_t offset_y = offset_x + common->ec_order_size;
+        memcpy(p_buffer, Ws_data + offset_y, common->ec_order_size);
+        ret = bn_set_value(common, y, p_buffer_len, p_buffer);
+        if (ret < 0) {
+            failed = 1;
+            break;
+        }
+
+        IppsECCPPointState *W = point_create_state(common);
+        if (W == NULL) {
+            failed = 1;
+            break;
+        }
+        Ws[i] = W;
+
+        ipp_status = ippsECCPSetPoint(x, y, W, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+
+        // generate k
+        ret = bn_set_value_random(common, k);
+        if (ret < 0) {
+            failed = 1;
+            break;
+        }
+
+        // compute Gk
+        IppsECCPPointState *Gk = point_create_state(common);
+        if (Gk == NULL) {
+            failed = 1;
+            break;
+        }
+        cts[i * 2] = Gk;
+
+        ipp_status = ippsECCPMulPointScalar(common->G, k, Gk, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+
+        // compute Gxk
+        IppsECCPPointState *GxkW = point_create_state(common);
+        if (GxkW == NULL) {
+            failed = 1;
+            break;
+        }
+        cts[i * 2 + 1] = GxkW;
+
+        ipp_status = ippsECCPMulPointScalar(Gk, offline_t->x, GxkW, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+
+        // compute Gxk * W
+        ipp_status = ippsECCPAddPoint(GxkW, Gk, GxkW, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+    }
+
+    if (failed) {
+        // error, free everything
+        for (uint32_t i = 0; i < common->n; i++) {
+            free(Ws[i]);
+        }
+
+        for (uint32_t i = 0; i < 2 * common->n; i++) {
+            free(cts[i]);
+        }
+
+        free(Ws);
+        free(cts);
+        free(x);
+        free(y);
+        free(k);
+
+        return -1;
+    }
+
+    free(x);
+    free(y);
+    free(k);
+
+    return 0;
+}
+
 int ecall_offline_ca_initialise() {
     return offline_ca_initialise(&context_common, &context_offline_ca);
 }
@@ -589,6 +767,7 @@ offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_c
     if (Ws == NULL) {
         return -1;
     }
+    offline_ca->Ws = Ws;
 
     IppsBigNumState *bn_i_plus_w_plus_one = bn_create_state(common);
     if (bn_i_plus_w_plus_one == NULL) {
@@ -654,6 +833,93 @@ offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_c
     return 0;
 }
 
+int ecall_offline_ca_get_d_and_Ws(uint8_t *d_data, uint8_t *Ws_data, size_t Ws_data_size) {
+    return offline_ca_get_d_and_Ws(&context_common, &context_offline_ca, d_data, Ws_data, Ws_data_size);
+}
+
+static int
+offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint8_t *d_data,
+                        uint8_t *Ws_data, size_t Ws_data_size) {
+    if (Ws_data != NULL && Ws_data_size < common->n * common->ec_order_size * 2) {
+        return -1;
+    }
+
+    int ipp_status = 0;
+
+    if (d_data != NULL) {
+        // extract value of d
+        IppsBigNumSGN sign;
+        int d_buffer_len = common->ec_order_u32_size;
+        uint32_t d_buffer[d_buffer_len];
+
+        ipp_status = ippsGet_BN(&sign, &d_buffer_len, d_buffer, offline_ca->d);
+        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+            return -1;
+        }
+
+        memcpy(d_data, d_buffer, common->ec_order_size);
+    }
+
+    if (Ws_data != NULL) {
+        // extract values of Ws
+        IppsBigNumState *x = bn_create_state(common);
+        if (x == NULL) {
+            return -1;
+        }
+        IppsBigNumState *y = bn_create_state(common);
+        if (y == NULL) {
+            free(x);
+
+            return -1;
+        }
+
+        for (uint32_t i = 0; i < common->n; i++) {
+            // get x and y coordinates from point
+            ipp_status = ippsECCPGetPoint(x, y, offline_ca->Ws[i], common->E);
+
+            if (ipp_status != ippStsNoErr) {
+                free(x);
+                free(y);
+
+                return -1;
+            }
+
+            IppsBigNumSGN sign;
+            int p_buffer_len = common->ec_order_u32_size;
+            uint32_t p_buffer[p_buffer_len];
+
+            // extract x-coordinate
+            ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, x);
+            if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+                free(x);
+                free(y);
+
+                return -1;
+            }
+
+            size_t offset_x = i * common->ec_order_size;
+            memcpy(Ws_data + offset_x, p_buffer, common->ec_order_size);
+
+            // extract y-coordinate
+            ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, y);
+            if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+                free(x);
+                free(y);
+
+                return -1;
+            }
+
+            size_t offset_y = offset_x + common->ec_order_size;
+            memcpy(Ws_data + offset_y, p_buffer, common->ec_order_size);
+        }
+
+        free(x);
+        free(y);
+    }
+
+    return 0;
+}
+
 void test_print() {
     ocall_debug_print("test_print called");
 }
@@ -665,7 +931,7 @@ int ecall_test_crypto() {
 
     char msg[256] = {0};
 
-    int my_ret = ecall_common_initialise(32);
+    int my_ret = ecall_common_initialise(1000);
     snprintf(msg, sizeof(msg), "ecall_common_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
@@ -692,6 +958,16 @@ int ecall_test_crypto() {
     }
     my_ret = ecall_offline_ca_set_ws_and_compute_Ws(ws);
     snprintf(msg, sizeof(msg), "ecall_offline_ca_set_ws_and_compute_Ws returned %d", my_ret);
+    ocall_debug_print(msg);
+
+    uint8_t d_data[32] = {0};
+    uint8_t Ws_data[1000 * 32 * 2] = {0};
+    my_ret = ecall_offline_ca_get_d_and_Ws(d_data, Ws_data, sizeof(Ws_data));
+    snprintf(msg, sizeof(msg), "ecall_offline_ca_get_d_and_Ws returned %d", my_ret);
+    ocall_debug_print(msg);
+
+    my_ret = ecall_offline_t_set_Ws_and_compute_cts(Ws_data, sizeof(Ws_data));
+    snprintf(msg, sizeof(msg), "ecall_offline_t_set_Ws_and_compute_cts returned %d", my_ret);
     ocall_debug_print(msg);
 
     ocall_debug_print("\n\n\n");
