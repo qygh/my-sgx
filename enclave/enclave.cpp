@@ -145,16 +145,16 @@ struct online_ca_context {
     IppsBigNumState *d;
 
     // ctres: Pair of points
-    IppsECCPPointState **ctres;
+    //IppsECCPPointState **ctres;
 
     // pres: Long (64 bits)
-    uint64_t pres;
+    //uint64_t pres;
 
     // sres: Long (64 bits)
-    uint64_t sres;
+    //uint64_t sres;
 
     // res: Pair of points
-    IppsECCPPointState **res;
+    IppsECCPPointState *res[2];
 };
 
 /*
@@ -184,9 +184,15 @@ bn_set_value(struct common_context *common, IppsBigNumState *number, int u32_siz
 
 static int bn_set_value_u32(struct common_context *common, IppsBigNumState *number, uint32_t value); //Done
 
+static int bn_set_value_u64(struct common_context *common, IppsBigNumState *number, uint64_t value); //Done
+
 static int bn_set_value_random(struct common_context *common, IppsBigNumState *number); //Done
 
 static IppsECCPPointState *point_create_state(struct common_context *common); //Done
+
+static int
+point_mul_scalar_neg(struct common_context *common, const IppsECCPPointState *point, const IppsBigNumState *scalar,
+                     IppsECCPPointState *result); //Done
 
 /*
  * Common input: E, q, G, n
@@ -255,7 +261,11 @@ static int
 online_u_set_cts_and_compute_ctres_pres_sres(struct common_context *common, struct online_u_context *online_u,
                                              const uint8_t *cts_data, size_t cts_data_size); //Done
 
-static void ecall_online_u_get_ctres_pres_sres(); //TODO
+int ecall_online_u_get_ctres_pres_sres(uint8_t *ctres_data, uint64_t *pres_data, uint64_t *sres_data); //Done
+
+static int
+online_u_get_ctres_pres_sres(struct common_context *common, struct online_u_context *online_u, uint8_t *ctres_data,
+                             uint64_t *pres_data, uint64_t *sres_data); //Done
 
 /*
  * Online operations for CA
@@ -265,7 +275,12 @@ int ecall_online_ca_initialise(const uint8_t *d_data); //Done
 static int
 online_ca_initialise(struct common_context *common, struct online_ca_context *online_ca, const uint8_t *d_data); //Done
 
-static void ecall_online_ca_set_ctres_pres_sres_and_compute_res(); //TODO
+int ecall_online_ca_set_ctres_pres_sres_and_compute_res(const uint8_t *ctres_data, const uint64_t *pres_data,
+                                                        const uint64_t *sres_data); //Done
+
+static int online_ca_set_ctres_pres_sres_and_compute_res(struct common_context *common,
+                                                         struct online_ca_context *online_ca, const uint8_t *ctres_data,
+                                                         const uint64_t *pres_data, const uint64_t *sres_data); //Done
 
 static void ecall_online_ca_get_res(); //TODO
 
@@ -343,6 +358,28 @@ static int bn_set_value_u32(struct common_context *common, IppsBigNumState *numb
 }
 
 /*
+ * Set BigNum value from a uint64_t value
+ */
+static int bn_set_value_u64(struct common_context *common, IppsBigNumState *number, uint64_t value) {
+    return bn_set_value(common, number, 2, (const uint32_t *) &value);
+}
+
+/*
+ * Set BigNum value to random
+ */
+static int bn_set_value_random(struct common_context *common, IppsBigNumState *number) {
+    // generate random value
+    Ipp32u rand_value[common->ec_order_u32_size];
+    sgx_status_t sgx_ret = sgx_read_rand((unsigned char *) &rand_value, common->ec_order_size);
+    if (sgx_ret != SGX_SUCCESS) {
+        return -1;
+    }
+
+    // set random value
+    return bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value);
+}
+
+/*
  * Create a Point state
  */
 static IppsECCPPointState *point_create_state(struct common_context *common) {
@@ -364,18 +401,25 @@ static IppsECCPPointState *point_create_state(struct common_context *common) {
 }
 
 /*
- * Set BigNum value to random
+ * Compute -scalar * point
  */
-static int bn_set_value_random(struct common_context *common, IppsBigNumState *number) {
-    // generate random value
-    Ipp32u rand_value[common->ec_order_u32_size];
-    sgx_status_t sgx_ret = sgx_read_rand((unsigned char *) &rand_value, common->ec_order_size);
-    if (sgx_ret != SGX_SUCCESS) {
+static int
+point_mul_scalar_neg(struct common_context *common, const IppsECCPPointState *point, const IppsBigNumState *scalar,
+                     IppsECCPPointState *result) {
+    // multiply
+    int ipp_status = ippsECCPMulPointScalar(point, scalar, result, common->E);
+    if (ipp_status != ippStsNoErr) {
         return -1;
     }
 
-    // set random value
-    return bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value);
+    // negate
+    ipp_status = ippsECCPNegativePoint(result, result, common->E);
+    if (ipp_status != ippStsNoErr) {
+        return -1;
+    }
+
+    return 0;
+
 }
 
 int ecall_common_initialise(uint32_t n) {
@@ -1284,6 +1328,130 @@ online_u_set_cts_and_compute_ctres_pres_sres(struct common_context *common, stru
     return 0;
 }
 
+int ecall_online_u_get_ctres_pres_sres(uint8_t *ctres_data, uint64_t *pres_data, uint64_t *sres_data) {
+    return online_u_get_ctres_pres_sres(&context_common, &context_online_u, ctres_data, pres_data, sres_data);
+}
+
+static int
+online_u_get_ctres_pres_sres(struct common_context *common, struct online_u_context *online_u, uint8_t *ctres_data,
+                             uint64_t *pres_data, uint64_t *sres_data) {
+    IppsBigNumState *ax = bn_create_state(common);
+    if (ax == NULL) {
+        return -1;
+    }
+
+    IppsBigNumState *ay = bn_create_state(common);
+    if (ay == NULL) {
+        free(ax);
+
+        return -1;
+    }
+
+    IppsBigNumState *bx = bn_create_state(common);
+    if (bx == NULL) {
+        free(ax);
+        free(ay);
+
+        return -1;
+    }
+
+    IppsBigNumState *by = bn_create_state(common);
+    if (by == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+
+        return -1;
+    }
+
+    // get x and y coordinates from ctres point A
+    int ipp_status = ippsECCPGetPoint(ax, ay, online_u->ctres[0], common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+
+    IppsBigNumSGN sign;
+    int p_buffer_len = common->ec_order_u32_size;
+    uint32_t p_buffer[p_buffer_len];
+
+    // extract x-coordinate value
+    ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, ax);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+    memcpy(ctres_data, p_buffer, common->ec_order_size);
+
+    // extract y-coordinate value
+    ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, ay);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+    memcpy(ctres_data + common->ec_order_size, p_buffer, common->ec_order_size);
+
+    // get x and y coordinates from ctres point B
+    ipp_status = ippsECCPGetPoint(bx, by, online_u->ctres[1], common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+
+    // extract x-coordinate value
+    ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, bx);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+    memcpy(ctres_data + (common->ec_order_size) * 2, p_buffer, common->ec_order_size);
+
+    // extract y-coordinate value
+    ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, by);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+    memcpy(ctres_data + (common->ec_order_size) * 3, p_buffer, common->ec_order_size);
+
+    // extract pres value
+    memcpy(pres_data, &(online_u->pres), sizeof(uint64_t));
+
+    // extract sres value
+    memcpy(sres_data, &(online_u->sres), sizeof(uint64_t));
+
+    free(ax);
+    free(ay);
+    free(bx);
+    free(by);
+
+    return 0;
+}
+
 int ecall_online_ca_initialise(const uint8_t *d_data) {
     return online_ca_initialise(&context_common, &context_online_ca, d_data);
 }
@@ -1302,6 +1470,301 @@ online_ca_initialise(struct common_context *common, struct online_ca_context *on
 
         return -1;
     }
+
+    return 0;
+}
+
+int ecall_online_ca_set_ctres_pres_sres_and_compute_res(const uint8_t *ctres_data, const uint64_t *pres_data,
+                                                        const uint64_t *sres_data) {
+    return online_ca_set_ctres_pres_sres_and_compute_res(&context_common, &context_online_ca, ctres_data, pres_data,
+                                                         sres_data);
+}
+
+static int online_ca_set_ctres_pres_sres_and_compute_res(struct common_context *common,
+                                                         struct online_ca_context *online_ca, const uint8_t *ctres_data,
+                                                         const uint64_t *pres_data, const uint64_t *sres_data) {
+    IppsBigNumState *ax = bn_create_state(common);
+    if (ax == NULL) {
+        return -1;
+    }
+
+    IppsBigNumState *ay = bn_create_state(common);
+    if (ay == NULL) {
+        free(ax);
+
+        return -1;
+    }
+
+    IppsBigNumState *bx = bn_create_state(common);
+    if (bx == NULL) {
+        free(ax);
+        free(ay);
+
+        return -1;
+    }
+
+    IppsBigNumState *by = bn_create_state(common);
+    if (by == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+
+        return -1;
+    }
+
+    // set x and y coordinates
+    int ret = bn_set_value(common, ax, common->ec_order_u32_size, (const uint32_t *) (ctres_data));
+    ret += bn_set_value(common, ay, common->ec_order_u32_size, (const uint32_t *) (ctres_data + common->ec_order_size));
+    ret += bn_set_value(common, bx, common->ec_order_u32_size,
+                        (const uint32_t *) (ctres_data + (common->ec_order_size * 2)));
+    ret += bn_set_value(common, bx, common->ec_order_u32_size,
+                        (const uint32_t *) (ctres_data + (common->ec_order_size * 3)));
+    if (ret != 0) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+
+    // create point A and B from x and y coordinates
+    IppsECCPPointState *A = point_create_state(common);
+    if (A == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+
+        return -1;
+    }
+
+    int ipp_status = ippsECCPSetPoint(ax, ay, A, common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+
+        return -1;
+    }
+
+    IppsECCPPointState *B = point_create_state(common);
+    if (B == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+
+        return -1;
+    }
+
+    ipp_status = ippsECCPSetPoint(bx, by, B, common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+
+        return -1;
+    }
+
+    // Res point A
+    IppsECCPPointState *A_res = point_create_state(common);
+    if (A_res == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+
+        return -1;
+    }
+
+    ipp_status = ippsECCPMulPointScalar(A, online_ca->d, A_res, common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+
+        return -1;
+    }
+
+    // Res point B
+    IppsECCPPointState *B_res = point_create_state(common);
+    if (B_res == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+
+        return -1;
+    }
+
+    ipp_status = ippsECCPMulPointScalar(B, online_ca->d, B_res, common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+
+        return -1;
+    }
+
+    // -pres * G
+    IppsECCPPointState *P_tmp = point_create_state(common);
+    if (P_tmp == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+
+        return -1;
+    }
+
+    IppsBigNumState *bn_tmp = bn_create_state(common);
+    if (bn_tmp == NULL) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+
+        return -1;
+    }
+
+    ret = bn_set_value_u64(common, bn_tmp, *pres_data);
+    if (ret < 0) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+        free(bn_tmp);
+
+        return -1;
+    }
+
+    ret = point_mul_scalar_neg(common, common->G, bn_tmp, P_tmp);
+    if (ret < 0) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+        free(bn_tmp);
+
+        return -1;
+    }
+
+    ipp_status = ippsECCPAddPoint(B_res, P_tmp, B_res, common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+        free(bn_tmp);
+
+        return -1;
+    }
+
+    // -sres * G
+    ret = bn_set_value_u64(common, bn_tmp, *sres_data);
+    if (ret < 0) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+        free(bn_tmp);
+
+        return -1;
+    }
+
+    ret = point_mul_scalar_neg(common, common->G, bn_tmp, P_tmp);
+    if (ret < 0) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+        free(bn_tmp);
+
+        return -1;
+    }
+
+    ipp_status = ippsECCPAddPoint(B_res, P_tmp, B_res, common->E);
+    if (ipp_status != ippStsNoErr) {
+        free(ax);
+        free(ay);
+        free(bx);
+        free(by);
+        free(A);
+        free(B);
+        free(A_res);
+        free(B_res);
+        free(P_tmp);
+        free(bn_tmp);
+
+        return -1;
+    }
+
+    online_ca->res[0] = A_res;
+    online_ca->res[1] = B_res;
+
+    free(ax);
+    free(ay);
+    free(bx);
+    free(by);
+    free(A);
+    free(B);
+    free(P_tmp);
+    free(bn_tmp);
 
     return 0;
 }
@@ -1387,6 +1850,18 @@ int ecall_test_crypto() {
     my_ret = ecall_online_u_set_cts_and_compute_ctres_pres_sres(cts_data, sizeof(cts_data));
     snprintf(msg, sizeof(msg), "ecall_online_u_set_cts_and_compute_ctres_pres_sres returned %d", my_ret);
     ocall_debug_print(msg);
+
+    uint8_t ctres_data[32 * 4];
+    uint64_t pres_data;
+    uint64_t sres_data;
+    my_ret = ecall_online_u_get_ctres_pres_sres(ctres_data, &pres_data, &sres_data);
+    snprintf(msg, sizeof(msg), "ecall_online_u_get_ctres_pres_sres returned %d", my_ret);
+    ocall_debug_print(msg);
+
+    my_ret = ecall_online_ca_set_ctres_pres_sres_and_compute_res(ctres_data, &pres_data, &sres_data);
+    snprintf(msg, sizeof(msg), "ecall_online_ca_set_ctres_pres_sres_and_compute_res returned %d", my_ret);
+    ocall_debug_print(msg);
+
 
     ocall_debug_print("\n\n\n");
     ocall_debug_print("test_crypto exiting");
