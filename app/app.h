@@ -28,5 +28,6 @@
 #define ENCLAVE_FILE "enclave.signed.so"
 #define WALLET_FILE "wallet.seal"
 
+#define EC_ORDER_BIT_SIZE 256
 
 #endif // APP_H_

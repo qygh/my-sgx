@@ -28,6 +28,96 @@ enclave {
         public int ecall_test_crypto();
 
         /**
+         * @brief      Initialise common context
+         *
+         * @param      n    The number of SNPs
+         *
+         * @return     0 if successful, negative otherwise.
+         */
+        public int ecall_common_initialise(
+            uint32_t n
+        );
+
+        /**
+         * @brief      Initialise context for offline T
+         *
+         * @return     0 if successful, negative otherwise.
+         */
+        public int ecall_offline_t_initialise(
+        );
+
+        /**
+         * @brief      Set Ws and compute cts
+         *
+         * @param[in]  Ws_data      Ws
+         *
+         * @param      Ws_data_size Size of Ws_data in bytes, should be n * 32 * 2 bytes
+         *
+         * @return     0 if successful, negative otherwise.
+         */
+        public int ecall_offline_t_set_Ws_and_compute_cts(
+            [in, size=Ws_data_size]const uint8_t *Ws_data,
+            size_t Ws_data_size
+        );
+
+        /**
+         * @brief      Get x and cts
+         *
+         * @param[out]  x_data          x, should be 32 bytes
+         *
+         * @param[out]  cts_data        cts
+         *
+         * @param       cts_data_size   Size of cts, should be n * 32 * 4 bytes
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_offline_t_get_x_and_cts(
+            [out, size=32]uint8_t *x_data,
+            [out, size=cts_data_size]uint8_t *cts_data,
+            size_t cts_data_size
+        );
+
+        /**
+         * @brief      Initialise context for offline CA
+         *
+         * @return     0 if successful, negative otherwise.
+         */
+        public int ecall_offline_ca_initialise(
+        );
+
+        /**
+         * @brief       Set ws and compute Ws
+         *
+         * @param       ws, should be n * 4 bytes
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_offline_ca_set_ws_and_compute_Ws(
+            [user_check]uint32_t *ws
+        );
+
+        /**
+         * @brief       Get d and Ws
+         *
+         * @param[out]  d_data          d, should be 32 bytes
+         *
+         * @param[out]  Ws_data         Ws
+         *
+         * @param       Ws_data_size    Size of Ws_data, should be n * 32 * 2 bytes
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_offline_ca_get_d_and_Ws(
+            [out, size=32]uint8_t *d_data,
+            [out, size=Ws_data_size]uint8_t *Ws_data,
+            size_t Ws_data_size
+        );
+
+
+
+
+
+        /**
          * @brief      Creates a new wallet with the provided master-password.
          *
          * @param[in]  master_password    The wallet's master-password

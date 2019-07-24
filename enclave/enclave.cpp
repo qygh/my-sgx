@@ -18,6 +18,7 @@
  */
 #include "enclave_t.h"
 #include "string.h"
+#include "my_enclave.h"
 
 #include "debug.h"
 #include "enclave.h"
@@ -37,8 +38,6 @@ static int hello = 0;
  * U : User
  * CA: Certification Authority
  */
-
-#define EC_ORDER_BIT_SIZE 256
 
 /*
  * Structure for common context
@@ -208,7 +207,7 @@ int ecall_offline_t_initialise(); //Done
 
 static int offline_t_initialise(struct common_context *common, struct offline_t_context *offline_t); //Done
 
-int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, const size_t Ws_data_size); //Done
+int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, size_t Ws_data_size); //Done
 
 static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struct offline_t_context *offline_t,
                                             const uint8_t *Ws_data, const size_t Ws_data_size); //Done
@@ -245,10 +244,10 @@ int ecall_online_t_initialise(const uint8_t *x_data); //Done
 static int
 online_t_initialise(struct common_context *common, struct online_t_context *online_t, const uint8_t *x_data); //Done
 
-int ecall_online_t_set_res_and_get_result(const uint8_t *res_data, uint8_t *result_data); //TODO
+int ecall_online_t_set_res_and_get_result(const uint8_t *res_data, uint8_t *result_data); //Done
 
 static int online_t_set_res_and_get_result(struct common_context *common, struct online_t_context *online_t,
-                                           const uint8_t *res_data, uint8_t *result_data); //TODO
+                                           const uint8_t *res_data, uint8_t *result_data); //Done
 
 /*
  * Online operations for U
@@ -632,7 +631,7 @@ static int offline_t_initialise(struct common_context *common, struct offline_t_
     return 0;
 }
 
-int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, const size_t Ws_data_size) {
+int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, size_t Ws_data_size) {
     return offline_t_set_Ws_and_compute_cts(&context_common, &context_offline_t, Ws_data, Ws_data_size);
 }
 
