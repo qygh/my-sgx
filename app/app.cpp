@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
     int updated, ret;
     sgx_status_t ecall_status, enclave_status;
 
-    int psize = 0;
+    /*int psize = 0;
     IppStatus pstatus = ippsECCPGetSizeStd256r1(&psize);
     if (pstatus != ippStsNoErr) {
         ocall_debug_print("app: ippsECCPGetSizeStd256r1 failed");
@@ -104,20 +104,19 @@ int main(int argc, char **argv) {
     }
     char msg[100];
     snprintf(msg, sizeof(msg), "app: IppsECCPState size: %d", psize);
-    ocall_debug_print(msg);
-
+    ocall_debug_print(msg);*/
 
     ////////////////////////////////////////////////
     // initialise enclave
     ////////////////////////////////////////////////
     enclave_status = sgx_create_enclave(ENCLAVE_FILE, SGX_DEBUG_FLAG, &token, &updated, &eid, NULL);
     if (enclave_status != SGX_SUCCESS) {
-        error_print("Fail to initialize enclave.");
+        error_print("Fail to initialise enclave");
         return -1;
     }
-    info_print("Enclave successfully initilised.");
+    info_print("Enclave successfully initilised");
 
-    ecall_status = ecall_test_crypto(eid, &ret);
+    /*ecall_status = ecall_test_crypto(eid, &ret);
     if (ecall_status != SGX_SUCCESS || is_error(ret)) {
         error_print("ecall_test_crypto failed.");
     } else {
@@ -125,102 +124,168 @@ int main(int argc, char **argv) {
     }
 
     ecall_status = ecall_common_initialise(eid, &ret, 1000);
-    printf("ecall_status: %d, eid: %lu, ret: %d\n", ecall_status, eid, ret);
-
+    printf("ecall_status: %d, eid: %lu, ret: %d\n", ecall_status, eid, ret);*/
 
     ////////////////////////////////////////////////
     // read input arguments 
     ////////////////////////////////////////////////
-    const char *options = "hvtn:p:c:sax:y:z:r:";
-    opterr = 0; // prevent 'getopt' from printing err messages
-    char err_message[100];
-    int opt, stop = 0;
-    int h_flag = 0, v_flag = 0, s_flag = 0, a_flag = 0, t_flag = 0;
-    char *n_value = NULL, *p_value = NULL, *c_value = NULL, *x_value = NULL, *y_value = NULL, *z_value = NULL, *r_value = NULL;
+    const char *options = "m:b:h:p:i:q:n:w:d:x:c:s:";
+    //opterr = 0; // prevent 'getopt' from printing err messages
+    //char err_message[100];
+    int opt = 0;
+    int m_flag = 0, b_flag = 0, h_flag = 0, p_flag = 0, i_flag = 0, q_flag = 0;
+    int n_flag = 0, w_flag = 0, d_flag = 0, x_flag = 0, c_flag = 0, s_flag = 0;
+    char *m_value = NULL, *b_value = NULL, *h_value = NULL, *p_value = NULL, *n_value = NULL, *i_value = NULL;
+    char *q_value = NULL, *w_value = NULL, *d_value = NULL, *x_value = NULL, *c_value = NULL, *s_value = NULL;
 
     // read user input
     while ((opt = getopt(argc, argv, options)) != -1) {
         switch (opt) {
-            // help
+            // mode
+            case 'm':
+                m_flag = 1;
+                m_value = optarg;
+                break;
+
+                // listening port
+            case 'b':
+                b_flag = 1;
+                b_value = optarg;
+                break;
+
+                // CA server hostname
             case 'h':
                 h_flag = 1;
+                h_value = optarg;
                 break;
 
-                // version
-            case 'v':
-                v_flag = 1;
-                break;
-
-                // run tests
-            case 't':
-                t_flag = 1;
-                break;
-
-                // create new wallet
-            case 'n':
-                n_value = optarg;
-                break;
-
-                // master-password
+                // CA server port
             case 'p':
+                p_flag = 1;
                 p_value = optarg;
                 break;
 
-                // change master-password
+                // T server hostname
+            case 'i':
+                i_flag = 1;
+                i_value = optarg;
+                break;
+
+                // T server port
+            case 'q':
+                q_flag = 1;
+                q_value = optarg;
+                break;
+
+                // number of SNPs/weights
+            case 'n':
+                n_flag = 1;
+                n_value = optarg;
+                break;
+
+                // weights file
+            case 'w':
+                w_flag = 1;
+                w_value = optarg;
+                break;
+
+                // d file
+            case 'd':
+                d_flag = 1;
+                d_value = optarg;
+                break;
+
+                // x file
+            case 'x':
+                x_flag = 1;
+                x_value = optarg;
+                break;
+
+                // cts file
             case 'c':
+                c_flag = 1;
                 c_value = optarg;
                 break;
 
-                // show wallet
+                // SNPs file
             case 's':
                 s_flag = 1;
-                break;
-
-                // add item
-            case 'a': // add item flag
-                a_flag = 1;
-                break;
-            case 'x': // item's title
-                x_value = optarg;
-                break;
-            case 'y': // item's username
-                y_value = optarg;
-                break;
-            case 'z': // item's password
-                z_value = optarg;
-                break;
-
-                // remove item
-            case 'r':
-                r_value = optarg;
-                break;
-
-                // exceptions
-            case '?':
-                if (optopt == 'n' || optopt == 'p' || optopt == 'c' || optopt == 'r' ||
-                    optopt == 'x' || optopt == 'y' || optopt == 'z'
-                        ) {
-                    sprintf(err_message, "Option -%c requires an argument.", optopt);
-                } else if (isprint(optopt)) {
-                    sprintf(err_message, "Unknown option `-%c'.", optopt);
-                } else {
-                    sprintf(err_message, "Unknown option character `\\x%x'.", optopt);
-                }
-                stop = 1;
-                error_print(err_message);
-                error_print("Program exiting.");
+                s_value = optarg;
                 break;
 
             default:
-                error_print("Unknown option.");
+                error_print("Unknown option");
         }
     }
-
 
     ////////////////////////////////////////////////
     // perform actions
     ////////////////////////////////////////////////
-    if (stop != 1) {
+    if (m_flag != 1) {
+        error_print("Mode is missing");
+        show_help();
+        return -1;
+    }
+
+    if (strcmp(m_value, "offline_t") == 0) {
+        if (h_flag != 1 || p_flag != 1 || n_flag != 1 || w_flag != 1) {
+            error_print("Missing options");
+            show_help();
+            return -1;
+        }
+
+        info_print("Mode: Offline T");
+        printf("CA hostname: %s, CA port: %s, n: %s, w file: %s\n", h_value, p_value, n_value, w_value);
+
+    } else if (strcmp(m_value, "offline_ca") == 0) {
+        if (b_flag != 1 || n_flag != 1) {
+            error_print("Missing options");
+            show_help();
+            return -1;
+        }
+
+        info_print("Mode: Offline CA");
+        printf("Listening port: %s, n: %s\n", b_value, n_value);
+
+    } else if (strcmp(m_value, "online_u") == 0) {
+        if (h_flag != 1 || p_flag != 1 || i_flag != 1 || q_flag != 1 || n_flag != 1 || s_flag != 1) {
+            error_print("Missing options");
+            show_help();
+            return -1;
+        }
+
+        info_print("Mode: Offline CA");
+        printf("CA hostname: %s, CA port: %s, T hostname: %s, T port: %s, n: %s, SNPs file: %s\n", h_value, p_value,
+               i_value, q_value, n_value, s_value);
+
+    } else if (strcmp(m_value, "online_t") == 0) {
+        if (b_flag != 1 || n_flag != 1 || x_flag != 1 || c_flag != 1) {
+            error_print("Missing options");
+            show_help();
+            return -1;
+        }
+
+        info_print("Mode: Online T");
+        printf("Listening port: %s, n: %s, x file: %s, cts file: %s\n", b_value, n_value, x_value, c_value);
+
+    } else if (strcmp(m_value, "online_ca") == 0) {
+        if (b_flag != 1 || d_flag != 1) {
+            error_print("Missing options");
+            show_help();
+            return -1;
+        }
+
+        info_print("Mode: Online CA");
+        printf("Listening port: %s, d file: %s\n", b_value, d_value);
+
+    } else {
+        error_print("Mode is invalid");
+        show_help();
+        return -1;
+    }
+
+
+    /*if (stop != 1) {
         // show help
         if (h_flag) {
             show_help();
@@ -307,24 +372,21 @@ int main(int argc, char **argv) {
             error_print("Wrong inputs.");
             show_help();
         }
-    }
-
-
+    }*/
 
     ////////////////////////////////////////////////
     // destroy enclave
     ////////////////////////////////////////////////
     enclave_status = sgx_destroy_enclave(eid);
     if (enclave_status != SGX_SUCCESS) {
-        error_print("Fail to destroy enclave.");
+        error_print("Failed to destroy enclave");
         return -1;
     }
-    info_print("Enclave successfully destroyed.");
-
+    info_print("Enclave successfully destroyed");
 
     ////////////////////////////////////////////////
     // exit success
     ////////////////////////////////////////////////
-    info_print("Program exit success.");
+    info_print("Program exiting");
     return 0;
 }

@@ -19,8 +19,15 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
-#include "wallet.h"
+#include <stdint.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <errno.h>
 
+#include "wallet.h"
 
 /**
  * @brief      Prints an info message. 
@@ -29,7 +36,7 @@
  *
  * @return     -
  */
-void info_print(const char* str);
+void info_print(const char *str);
 
 
 /**
@@ -39,7 +46,7 @@ void info_print(const char* str);
  *
  * @return     -
  */
-void warning_print(const char* str);
+void warning_print(const char *str);
 
 
 /**
@@ -49,7 +56,7 @@ void warning_print(const char* str);
  *
  * @return     -
  */
-void error_print(const char* str);
+void error_print(const char *str);
 
 
 /**
@@ -59,7 +66,7 @@ void error_print(const char* str);
  *
  * @return     -
  */
-void print_wallet(const wallet_t* wallet);
+void print_wallet(const wallet_t *wallet);
 
 
 /**
@@ -92,7 +99,12 @@ void show_help();
  */
 void show_version();
 
+int create_tcp_client_socket(char *hostname, char *port);
+
+int create_tcp_listening_socket(uint16_t port);
+
+ssize_t tcp_read(int fd, uint8_t *buf, size_t count);
+
+ssize_t tcp_write(int fd, const uint8_t *buf, size_t count);
 
 #endif // UTIL_H_
-
-

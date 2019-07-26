@@ -113,6 +113,98 @@ enclave {
             size_t Ws_data_size
         );
 
+        /**
+         * @brief       Initialise context for online T
+         *
+         * @param[in]   x_data    x
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_t_initialise(
+            [in, size=32]const uint8_t *x_data
+        );
+
+        /**
+         * @brief       Initialise context for online U
+         *
+         * @param[in]   snps    SNPs
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_u_initialise(
+            [user_check]const uint8_t *snps
+        );
+
+        /**
+         * @brief       Set cts and compute ctres, pres and sres
+         *
+         * @param[in]   cts_data        cts
+         *
+         * @param       cts_data_size   Size of cts_data, should be n * 32 * 4 bytes
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_u_set_cts_and_compute_ctres_pres_sres(
+            [in, size=cts_data_size]const uint8_t *cts_data,
+            size_t cts_data_size
+        );
+
+        /**
+         * @brief       Get ctres, pres and sres
+         *
+         * @param[out]  ctres_data      ctres, should be 32 * 4 bytes
+         *
+         * @param[out]  pres_data       pres
+         *
+         * @param[out]  sres_data       sres
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_u_get_ctres_pres_sres(
+            [out, size=128]uint8_t *ctres_data,
+            [out]uint64_t *pres_data,
+            [out]uint64_t *sres_data
+        );
+
+        /**
+         * @brief       Initialise context for online CA
+         *
+         * @param[in]   d_data      d
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_ca_initialise(
+            [in, size=32]const uint8_t *d_data
+        );
+
+        /**
+         * @brief       Set ctres, pres, sres and compute res
+         *
+         * @param[in]   ctres_data      ctres
+         *
+         * @param[in]   pres_data       pres
+         *
+         * @param[in]   sres_data       sres
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_ca_set_ctres_pres_sres_and_compute_res(
+            [in, size=128]const uint8_t *ctres_data,
+            [in]const uint64_t *pres_data,
+            [in]const uint64_t *sres_data
+        );
+
+        /**
+         * @brief       Get res
+         *
+         * @param[out]  res_data        res
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_ca_get_res(
+            [out, size=64]uint8_t *res_data
+        );
+
 
 
 
