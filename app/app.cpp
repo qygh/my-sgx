@@ -51,6 +51,10 @@ void ocall_debug_print(const char *str) {
     printf("[DEBUG] %s\n", str);
 }
 
+void ocall_print(const char *str) {
+    printf("%s", str);
+}
+
 /**
  * @brief      Save sealed data to file The sizes/length of 
  *             pointers need to be specified, otherwise SGX will

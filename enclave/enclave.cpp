@@ -381,7 +381,16 @@ static int bn_set_value_random(struct common_context *common, IppsBigNumState *n
     }
 
     // set random value
-    return bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value);
+    if (bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value) < 0) {
+        return -1;
+    }
+
+    int ipp_status = ippsMod_BN(number, common->q, number);
+    if (ipp_status != ippStsNoErr) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -2178,6 +2187,28 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_online_u_get_ctres_pres_sres returned %d", my_ret);
     ocall_debug_print(msg);
 
+    ocall_debug_print("ctres:\n");
+    for (int i = 0; i < sizeof(ctres_data); i++) {
+        snprintf(msg, sizeof(msg), "0x%02x ", ctres_data[i]);
+        ocall_print(msg);
+    }
+    ocall_print("\n\n");
+
+    ocall_debug_print("pres:\n");
+    for (int i = 0; i < sizeof(pres_data); i++) {
+        snprintf(msg, sizeof(msg), "0x%02x ", ((uint8_t * )(&pres_data))[i]);
+        ocall_print(msg);
+    }
+    ocall_print("\n\n");
+
+    ocall_debug_print("sres:\n");
+    for (int i = 0; i < sizeof(sres_data); i++) {
+        snprintf(msg, sizeof(msg), "0x%02x ", ((uint8_t * )(&sres_data))[i]);
+        ocall_print(msg);
+    }
+    ocall_print("\n\n");
+
+
     my_ret = ecall_online_ca_set_ctres_pres_sres_and_compute_res(ctres_data, &pres_data, &sres_data);
     snprintf(msg, sizeof(msg), "ecall_online_ca_set_ctres_pres_sres_and_compute_res returned %d", my_ret);
     ocall_debug_print(msg);
@@ -2187,11 +2218,24 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_online_ca_get_res returned %d", my_ret);
     ocall_debug_print(msg);
 
+    ocall_debug_print("res:\n");
+    for (int i = 0; i < sizeof(res_data); i++) {
+        snprintf(msg, sizeof(msg), "0x%02x ", res_data[i]);
+        ocall_print(msg);
+    }
+    ocall_print("\n\n");
+
     uint8_t result_data[32 * 2];
     my_ret = ecall_online_t_set_res_and_get_result(res_data, result_data);
     snprintf(msg, sizeof(msg), "ecall_online_t_set_res_and_get_result returned %d", my_ret);
     ocall_debug_print(msg);
 
+    ocall_debug_print("result:\n");
+    for (int i = 0; i < sizeof(result_data); i++) {
+        snprintf(msg, sizeof(msg), "0x%02x ", result_data[i]);
+        ocall_print(msg);
+    }
+    ocall_print("\n\n");
 
     ocall_debug_print("\n\n\n");
     ocall_debug_print("test exiting");

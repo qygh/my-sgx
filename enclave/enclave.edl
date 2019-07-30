@@ -315,6 +315,9 @@ enclave {
             [in, string]const char* str
         );
 
+        void ocall_print(
+            [in, string]const char* str
+        );
 
         /**
          * @brief      Save sealed data to file The sizes/length of 
