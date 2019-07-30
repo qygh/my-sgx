@@ -19,6 +19,8 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
+#include <fstream>
+
 #include <stdint.h>
 #include <unistd.h>
 #include <signal.h>
@@ -99,9 +101,13 @@ void show_help();
  */
 void show_version();
 
-int create_tcp_client_socket(char *hostname, char *port);
+ssize_t load_file(const char *filename, uint8_t *buffer, size_t length);
 
-int create_tcp_listening_socket(uint16_t port);
+ssize_t save_file(const char *filename, const uint8_t *buffer, size_t length);
+
+int create_tcp_client_socket(const char *hostname, const char *port);
+
+int create_tcp_listening_socket(char *port);
 
 ssize_t tcp_read(int fd, uint8_t *buf, size_t count);
 

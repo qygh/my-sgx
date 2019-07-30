@@ -22,6 +22,7 @@
 #include <cstring>
 #include <fstream>
 #include <getopt.h>
+#include <pthread.h>
 
 #include "app.h"
 #include "utils.h"
@@ -30,6 +31,9 @@
 #include "enclave.h"
 #include "test.h"
 #include "ippcp.h"
+
+#include "offline_t_handler.h"
+#include "offline_ca_handler.h"
 
 using namespace std;
 
@@ -89,11 +93,10 @@ int ocall_is_wallet(void) {
  * main
  ***************************************************/
 int main(int argc, char **argv) {
-    // declare enclave & return variables
-    sgx_enclave_id_t eid = 0;
-    sgx_launch_token_t token = {0};
-    int updated, ret;
-    sgx_status_t ecall_status, enclave_status;
+    // ignore SIGPIPE that can be possibly caused by writes to disconnected sockets
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        fprintf(stderr, "signal(): %s\n", strerror(errno));
+    }
 
     /*int psize = 0;
     IppStatus pstatus = ippsECCPGetSizeStd256r1(&psize);
@@ -105,16 +108,6 @@ int main(int argc, char **argv) {
     char msg[100];
     snprintf(msg, sizeof(msg), "app: IppsECCPState size: %d", psize);
     ocall_debug_print(msg);*/
-
-    ////////////////////////////////////////////////
-    // initialise enclave
-    ////////////////////////////////////////////////
-    enclave_status = sgx_create_enclave(ENCLAVE_FILE, SGX_DEBUG_FLAG, &token, &updated, &eid, NULL);
-    if (enclave_status != SGX_SUCCESS) {
-        error_print("Fail to initialise enclave");
-        return -1;
-    }
-    info_print("Enclave successfully initilised");
 
     /*ecall_status = ecall_test_crypto(eid, &ret);
     if (ecall_status != SGX_SUCCESS || is_error(ret)) {
@@ -137,6 +130,8 @@ int main(int argc, char **argv) {
     int n_flag = 0, w_flag = 0, d_flag = 0, x_flag = 0, c_flag = 0, s_flag = 0;
     char *m_value = NULL, *b_value = NULL, *h_value = NULL, *p_value = NULL, *n_value = NULL, *i_value = NULL;
     char *q_value = NULL, *w_value = NULL, *d_value = NULL, *x_value = NULL, *c_value = NULL, *s_value = NULL;
+
+    int mode = MODE_UNDEFINED;
 
     // read user input
     while ((opt = getopt(argc, argv, options)) != -1) {
@@ -224,66 +219,143 @@ int main(int argc, char **argv) {
     if (m_flag != 1) {
         error_print("Mode is missing");
         show_help();
-        return -1;
+        return 1;
     }
 
     if (strcmp(m_value, "offline_t") == 0) {
         if (h_flag != 1 || p_flag != 1 || n_flag != 1 || w_flag != 1) {
             error_print("Missing options");
             show_help();
-            return -1;
+            return 1;
         }
 
         info_print("Mode: Offline T");
         printf("CA hostname: %s, CA port: %s, n: %s, w file: %s\n", h_value, p_value, n_value, w_value);
 
+        mode = MODE_OFFLINE_T;
+
     } else if (strcmp(m_value, "offline_ca") == 0) {
         if (b_flag != 1 || n_flag != 1) {
             error_print("Missing options");
             show_help();
-            return -1;
+            return 1;
         }
 
         info_print("Mode: Offline CA");
         printf("Listening port: %s, n: %s\n", b_value, n_value);
 
+        mode = MODE_OFFLINE_CA;
+
     } else if (strcmp(m_value, "online_u") == 0) {
         if (h_flag != 1 || p_flag != 1 || i_flag != 1 || q_flag != 1 || n_flag != 1 || s_flag != 1) {
             error_print("Missing options");
             show_help();
-            return -1;
+            return 1;
         }
 
-        info_print("Mode: Offline CA");
+        info_print("Mode: Online U");
         printf("CA hostname: %s, CA port: %s, T hostname: %s, T port: %s, n: %s, SNPs file: %s\n", h_value, p_value,
                i_value, q_value, n_value, s_value);
+
+        mode = MODE_ONLINE_U;
 
     } else if (strcmp(m_value, "online_t") == 0) {
         if (b_flag != 1 || n_flag != 1 || x_flag != 1 || c_flag != 1) {
             error_print("Missing options");
             show_help();
-            return -1;
+            return 1;
         }
 
         info_print("Mode: Online T");
         printf("Listening port: %s, n: %s, x file: %s, cts file: %s\n", b_value, n_value, x_value, c_value);
 
+        mode = MODE_ONLINE_T;
+
     } else if (strcmp(m_value, "online_ca") == 0) {
         if (b_flag != 1 || d_flag != 1) {
             error_print("Missing options");
             show_help();
-            return -1;
+            return 1;
         }
 
         info_print("Mode: Online CA");
         printf("Listening port: %s, d file: %s\n", b_value, d_value);
 
+        mode = MODE_ONLINE_CA;
+
     } else {
         error_print("Mode is invalid");
         show_help();
-        return -1;
+        return 1;
     }
 
+    if (mode == MODE_OFFLINE_T) {
+        struct offline_t_args ota = {0};
+        ota.ca_hostname = h_value;
+        ota.ca_port = p_value;
+        ota.n = n_value;
+        ota.w_file = w_value;
+
+        int ret = offline_t_handler(&ota);
+        if (ret < 0) {
+            error_print("offline_t_handler() failed");
+            return 1;
+        }
+    } else if (mode == MODE_OFFLINE_CA) {
+        // create socket
+        int sockfd = create_tcp_listening_socket(b_value);
+        if (sockfd < 0) {
+            error_print("create_tcp_listening_socket() failed");
+            return 1;
+        }
+
+        // thread
+        struct offline_ca_args oca = {0};
+        pthread_t offline_ca_thread;
+        pthread_barrier_t *offline_ca_thread_barrier = (pthread_barrier_t *) malloc(
+                sizeof(pthread_barrier_t));
+        if (offline_ca_thread_barrier == NULL) {
+            error_print("malloc() for barrier failed");
+
+            close(sockfd);
+            return 1;
+        }
+        if (pthread_barrier_init(offline_ca_thread_barrier, NULL, 2) < 0) {
+            error_print("pthread_barrier_init() failed");
+
+            close(sockfd);
+            free(offline_ca_thread_barrier);
+            return 1;
+        }
+        oca.barrier = offline_ca_thread_barrier;
+        oca.n = n_value;
+
+        info_print("Offline CA now accepting connections");
+        while (1) {
+            int newfd = accept(sockfd, NULL, NULL);
+            if (newfd < 0) {
+                error_print("accept() failed");
+
+                continue;
+            }
+
+            oca.sockfd = newfd;
+            if (pthread_create(&offline_ca_thread, NULL, offline_ca_handler,
+                               &oca) != 0) {
+                error_print("pthread_create() failed");
+
+                close(newfd);
+                continue;
+            }
+
+            // must be called to avoid memory leaks
+            pthread_detach(offline_ca_thread);
+
+            /*allow pthread_detach() to be called before new thread terminates and
+             wait until the thread finishes copying arguments onto its own stack*/
+            pthread_barrier_wait(offline_ca_thread_barrier);
+        }
+    }
 
     /*if (stop != 1) {
         // show help
@@ -375,18 +447,8 @@ int main(int argc, char **argv) {
     }*/
 
     ////////////////////////////////////////////////
-    // destroy enclave
-    ////////////////////////////////////////////////
-    enclave_status = sgx_destroy_enclave(eid);
-    if (enclave_status != SGX_SUCCESS) {
-        error_print("Failed to destroy enclave");
-        return -1;
-    }
-    info_print("Enclave successfully destroyed");
-
-    ////////////////////////////////////////////////
     // exit success
     ////////////////////////////////////////////////
-    info_print("Program exiting");
+    info_print("Program exiting successfully");
     return 0;
 }

@@ -193,7 +193,37 @@ void show_version() {
     printf("v%s\n", VERSION);
 }
 
-int create_tcp_client_socket(char *hostname, char *port) {
+ssize_t load_file(const char *filename, uint8_t *buffer, size_t length) {
+    std::ifstream file(filename, std::ios::in | std::ios::binary);
+    if (file.fail()) {
+        return -1;
+    }
+
+    file.read((char *) buffer, length);
+    if (file.fail()) {
+        return -1;
+    }
+
+    file.close();
+    return 0;
+}
+
+ssize_t save_file(const char *filename, const uint8_t *buffer, size_t length) {
+    std::ofstream file(filename, std::ios::out | std::ios::binary);
+    if (file.fail()) {
+        return -1;
+    }
+
+    file.write((const char *) buffer, length);
+    if (file.fail()) {
+        return -1;
+    }
+
+    file.close();
+    return 0;
+}
+
+int create_tcp_client_socket(const char *hostname, const char *port) {
     struct addrinfo hints = {0};
     struct addrinfo *res = NULL;
 
@@ -206,6 +236,7 @@ int create_tcp_client_socket(char *hostname, char *port) {
         return -1;
     }
 
+    // create socket
     int sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (sockfd == -1) {
         fprintf(stderr, "create_tcp_client_socket: socket(): %s\n", strerror(errno));
@@ -214,12 +245,7 @@ int create_tcp_client_socket(char *hostname, char *port) {
         return -1;
     }
 
-    //ignore SIGPIPE that can be possibly caused by writes to disconnected sockets
-    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
-        fprintf(stderr, "create_tcp_client_socket: signal(): %s\n", strerror(errno));
-    }
-
-    //connect socket
+    // connect socket
     if (connect(sockfd, res->ai_addr, res->ai_addrlen) != 0) {
         fprintf(stderr, "create_tcp_client_socket: connect(): %s\n", strerror(errno));
 
@@ -232,14 +258,14 @@ int create_tcp_client_socket(char *hostname, char *port) {
     return sockfd;
 }
 
-int create_tcp_listening_socket(uint16_t port) {
+int create_tcp_listening_socket(char *port) {
     int sockfd = socket(PF_INET6, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("create_tcp_listening_socket(): socket() error");
         return -1;
     }
 
-    //work with both IPv4 and IPv6
+    // work with both IPv4 and IPv6
     int zero = 0;
     int soret = setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &zero,
                            sizeof(zero));
@@ -249,18 +275,18 @@ int create_tcp_listening_socket(uint16_t port) {
                 "create_tcp_listening_socket(): Server might not work with IPv4 clients\n");
     }
 
-    //reuse port
+    // reuse port
     int one = 1;
     soret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     if (soret < 0) {
         perror("create_tcp_listening_socket(): setsockopt() error");
     }
 
-    //bind
+    // bind
     struct sockaddr_in6 sockaddr = {0};
     sockaddr.sin6_addr = in6addr_any;
     sockaddr.sin6_family = AF_INET6;
-    sockaddr.sin6_port = htons(port);
+    sockaddr.sin6_port = htons((uint16_t) strtol(port, NULL, 10));
     int ret = bind(sockfd, (struct sockaddr *) &sockaddr, sizeof(sockaddr));
     if (ret < 0) {
         perror("create_tcp_listening_socket(): bind() error");
@@ -268,7 +294,7 @@ int create_tcp_listening_socket(uint16_t port) {
         return -1;
     }
 
-    //listen
+    // listen
     ret = listen(sockfd, 20);
     if (ret < 0) {
         perror("create_tcp_listening_socket(): listen() error");

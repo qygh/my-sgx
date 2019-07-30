@@ -23,11 +23,31 @@
 /***************************************************
  * config.
  ***************************************************/
-#define APP_NAME "sgx-wallet"
+#define APP_NAME "my-sgx"
 #define VERSION "0.0.1"
 #define ENCLAVE_FILE "enclave.signed.so"
 #define WALLET_FILE "wallet.seal"
 
+#define X_FILE "x.data"
+#define CTS_FILE "cts.data"
+#define D_FILE "d.data"
+
 #define EC_ORDER_BIT_SIZE 256
+#define EC_ORDER_SIZE   EC_ORDER_BIT_SIZE / 8
+
+#define MODE_UNDEFINED 0
+#define MODE_OFFLINE_T 1
+#define MODE_OFFLINE_CA 2
+#define MODE_ONLINE_U 3
+#define MODE_ONLINE_T 4
+#define MODE_ONLINE_CA 5
+
+#define X_SIZE  EC_ORDER_SIZE
+#define D_SIZE  EC_ORDER_SIZE
+
+#define ws_size_from_n(n)   n * 4
+#define cts_size_from_n(n)  n * EC_ORDER_SIZE * 4
+#define snps_size_from_n(n) n
+#define Ws_size_from_n(n)   n * EC_ORDER_SIZE * 2
 
 #endif // APP_H_
