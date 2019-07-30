@@ -850,7 +850,7 @@ static int offline_t_get_x_and_cts(struct common_context *common, struct offline
                 return -1;
             }
 
-            size_t offset_x = i * common->ec_order_size;
+            size_t offset_x = i * common->ec_order_size * 2;
             memcpy(cts_data + offset_x, p_buffer, common->ec_order_size);
 
             // extract y-coordinate
@@ -2093,9 +2093,9 @@ void test_print() {
     ocall_debug_print("test_print called");
 }
 
-int ecall_test_crypto() {
+int ecall_test() {
     ocall_debug_print("\n\n\n");
-    ocall_debug_print("test_crypto called");
+    ocall_debug_print("test called");
     ocall_debug_print("\n\n\n");
 
     char msg[256] = {0};
@@ -2194,10 +2194,10 @@ int ecall_test_crypto() {
 
 
     ocall_debug_print("\n\n\n");
-    ocall_debug_print("test_crypto exiting");
+    ocall_debug_print("test exiting");
     ocall_debug_print("\n\n\n");
 
-    return 1;
+    return 0;
 
     test_print();
 
@@ -2514,7 +2514,7 @@ int ecall_test_crypto() {
         ocall_debug_print("ippsCmpZero_BN succeeded");
     }
 
-    ocall_debug_print("test_crypto exiting");
+    ocall_debug_print("test exiting");
     ocall_debug_print("\n\n\n");
 
     return RET_SUCCESS;

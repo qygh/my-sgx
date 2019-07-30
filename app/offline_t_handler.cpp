@@ -107,6 +107,7 @@ int offline_t_handler(struct offline_t_args *arg) {
     }
 
     // offline message 1: send ws to CA
+    info_print("Offline message 1: send ws to CA");
     sret = tcp_write(sockfd, ws_data, ws_data_len);
     if (sret != ws_data_len) {
         error_print("Failed to send ws to CA");
@@ -122,6 +123,7 @@ int offline_t_handler(struct offline_t_args *arg) {
     }
 
     // offline message 2: receive Ws from CA
+    info_print("Offline message 2: receive Ws from CA");
     sret = tcp_read(sockfd, Ws_data, Ws_data_len);
     if (sret != Ws_data_len) {
         error_print("Failed to receive Ws from CA");

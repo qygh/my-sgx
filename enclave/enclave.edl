@@ -25,7 +25,7 @@ enclave {
 
     // define ECALLs
     trusted {
-        public int ecall_test_crypto();
+        public int ecall_test();
 
         /**
          * @brief      Initialise common context
@@ -125,6 +125,20 @@ enclave {
         );
 
         /**
+         * @brief       Set res and compute result
+         *
+         * @param[in]   res_data    res, should be 128 bytes
+         *
+         * @param[out]  result_data result, should be 64 bytes
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_t_set_res_and_get_result(
+            [in, size=128]const uint8_t *res_data,
+            [out, size=64]uint8_t *result_data
+        );
+
+        /**
          * @brief       Initialise context for online U
          *
          * @param[in]   snps    SNPs
@@ -202,7 +216,7 @@ enclave {
          * @return      0 if successful, negative otherwise.
          */
         public int ecall_online_ca_get_res(
-            [out, size=64]uint8_t *res_data
+            [out, size=128]uint8_t *res_data
         );
 
 

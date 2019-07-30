@@ -76,7 +76,7 @@ else
 	Urts_Library_Name := sgx_urts
 endif
 
-App_Cpp_Files := app/app.cpp app/utils.cpp app/test.cpp app/offline_t_handler.cpp app/offline_ca_handler.cpp
+App_Cpp_Files := app/app.cpp app/utils.cpp app/test.cpp app/offline_t_handler.cpp app/offline_ca_handler.cpp app/online_u_handler.cpp app/online_t_handler.cpp app/online_ca_handler.cpp
 App_Include_Paths := -Iapp -I$(SGX_SDK)/include -Iinclude -Itest -I$(IPPCP_SDK)/include
 
 App_C_Flags := $(SGX_COMMON_CFLAGS) -fPIC -Wno-attributes $(App_Include_Paths)

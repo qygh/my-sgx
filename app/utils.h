@@ -107,7 +107,7 @@ ssize_t save_file(const char *filename, const uint8_t *buffer, size_t length);
 
 int create_tcp_client_socket(const char *hostname, const char *port);
 
-int create_tcp_listening_socket(char *port);
+int create_tcp_listening_socket(const char *port);
 
 ssize_t tcp_read(int fd, uint8_t *buf, size_t count);
 

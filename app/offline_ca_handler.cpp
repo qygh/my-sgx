@@ -8,10 +8,10 @@ void *offline_ca_handler(void *arg) {
     struct offline_ca_args *oargs = (struct offline_ca_args *) arg;
     struct offline_ca_args args = {0};
 
-    //copy arguments onto thread's own stack
+    // copy arguments onto thread's own stack
     memcpy(&args, oargs, sizeof(args));
 
-    //finish copying arguments onto own stack and wait until main thread has called pthread_detach()
+    // finish copying arguments onto own stack and wait until main thread has called pthread_detach()
     pthread_barrier_wait(args.barrier);
 
     // declare enclave & return variables
@@ -84,6 +84,7 @@ void *offline_ca_handler(void *arg) {
     }
 
     // offline message 1: receive ws from T
+    info_print("Offline message 1: receive ws from T");
     sret = tcp_read(sockfd, ws_data, ws_data_len);
     if (sret != ws_data_len) {
         error_print("Failed to receive ws from T");
@@ -126,6 +127,7 @@ void *offline_ca_handler(void *arg) {
     }
 
     // offline message 2: send Ws to T
+    info_print("Offline message 2: send Ws to T");
     sret = tcp_write(sockfd, Ws_data, Ws_data_len);
     if (sret != Ws_data_len) {
         error_print("Failed to send Ws to T");
@@ -154,6 +156,7 @@ void *offline_ca_handler(void *arg) {
     }
     info_print("d saved to file "
                D_FILE);
+
 
     ////////////////////////////////////////////////
     // destroy enclave

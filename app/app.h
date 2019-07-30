@@ -31,6 +31,7 @@
 #define X_FILE "x.data"
 #define CTS_FILE "cts.data"
 #define D_FILE "d.data"
+#define RESULT_FILE "result.data"
 
 #define EC_ORDER_BIT_SIZE 256
 #define EC_ORDER_SIZE   EC_ORDER_BIT_SIZE / 8
@@ -44,10 +45,15 @@
 
 #define X_SIZE  EC_ORDER_SIZE
 #define D_SIZE  EC_ORDER_SIZE
+#define CTRES_SIZE  EC_ORDER_SIZE * 4
+#define PRES_SIZE   8
+#define SRES_SIZE   8
+#define RES_SIZE    EC_ORDER_SIZE * 4
+#define RESULT_SIZE EC_ORDER_SIZE * 2
 
 #define ws_size_from_n(n)   n * 4
 #define cts_size_from_n(n)  n * EC_ORDER_SIZE * 4
-#define snps_size_from_n(n) n
 #define Ws_size_from_n(n)   n * EC_ORDER_SIZE * 2
+#define snps_size_from_n(n) n
 
 #endif // APP_H_

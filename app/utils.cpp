@@ -147,8 +147,11 @@ int is_error(int error_code) {
     printf("more information: https://github.com/asonnino/sgx-wallet\n\n");
 }*/
 void show_help() {
-    printf("MY-SGX\n\n");
+    printf("\n\nMY-SGX\n\n");
     printf("Usage:\n");
+
+    printf("\tTest mode:\n");
+    printf("\t\"-m test\" to set mode\n\n");
 
     printf("\tOffline T mode:\n");
     printf("\t\"-m offline_t\" to set mode\n");
@@ -181,6 +184,7 @@ void show_help() {
     printf("\tOnline CA mode:\n");
     printf("\t\"-m online_ca\" to set mode\n");
     printf("\t\"-b port\" to specify the listening port\n");
+    printf("\t\"-n number\" to specify the number of SNPs/weights\n");
     printf("\t\"-d d\" to specify the d file\n\n");
 }
 
@@ -258,7 +262,7 @@ int create_tcp_client_socket(const char *hostname, const char *port) {
     return sockfd;
 }
 
-int create_tcp_listening_socket(char *port) {
+int create_tcp_listening_socket(const char *port) {
     int sockfd = socket(PF_INET6, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("create_tcp_listening_socket(): socket() error");
