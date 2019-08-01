@@ -26,7 +26,6 @@
 
 #include "app.h"
 #include "utils.h"
-#include "ippcp.h"
 
 #include "offline_t_handler.h"
 #include "offline_ca_handler.h"
