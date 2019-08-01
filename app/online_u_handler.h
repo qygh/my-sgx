@@ -6,11 +6,9 @@
 #define MY_SGX_ONLINE_U_HANDLER_H
 
 #include "enclave_u.h"
+#include "sgx_urts.h"
 #include "app.h"
 #include "utils.h"
-#include "debug.h"
-#include "enclave.h"
-#include "test.h"
 
 struct online_u_args {
     const char *ca_hostname;

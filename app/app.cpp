@@ -1,20 +1,20 @@
 /*
  * Copyright 2018 Alberto Sonnino
  * 
- * This file is part of SGX-WALLET.
+ * This file is part of MY-SGX.
  * 
- * SGX-WALLET is free software: you can redistribute it and/or modify
+ * MY-SGX is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  * 
- * SGX-WALLET is distributed in the hope that it will be useful,
+ * MY-SGX is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with SGX-WALLET.  If not, see <http://www.gnu.org/licenses/>.
+ * along with MY-SGX.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "enclave_u.h"
 #include "sgx_urts.h"
@@ -26,10 +26,6 @@
 
 #include "app.h"
 #include "utils.h"
-#include "debug.h"
-#include "wallet.h"
-#include "enclave.h"
-#include "test.h"
 #include "ippcp.h"
 
 #include "offline_t_handler.h"
@@ -55,46 +51,7 @@ void ocall_print(const char *str) {
     printf("%s", str);
 }
 
-/**
- * @brief      Save sealed data to file The sizes/length of 
- *             pointers need to be specified, otherwise SGX will
- *             assume a count of 1 for all pointers.
- *
- */
-int ocall_save_wallet(const uint8_t *sealed_data, const size_t sealed_size) {
-    ofstream file(WALLET_FILE, ios::out | ios::binary);
-    if (file.fail()) { return 1; }
-    file.write((const char *) sealed_data, sealed_size);
-    file.close();
-    return 0;
-}
-
-/**
- * @brief      Load sealed data from file The sizes/length of 
- *             pointers need to be specified, otherwise SGX will
- *             assume a count of 1 for all pointers.
- *
- */
-int ocall_load_wallet(uint8_t *sealed_data, const size_t sealed_size) {
-    ifstream file(WALLET_FILE, ios::in | ios::binary);
-    if (file.fail()) { return 1; }
-    file.read((char *) sealed_data, sealed_size);
-    file.close();
-    return 0;
-}
-
-/**
- * @brief      Verifies if a wallet files exists.
- *
- */
-int ocall_is_wallet(void) {
-    ifstream file(WALLET_FILE, ios::in | ios::binary);
-    if (file.fail()) { return 0; } // failure means no wallet found
-    file.close();
-    return 1;
-}
-
-int test_ecall() {
+int test_ecalls() {
     // declare enclave & return variables
     sgx_enclave_id_t eid = 0;
     sgx_launch_token_t token = {0};
@@ -133,6 +90,87 @@ int test_ecall() {
     return 0;
 }
 
+int decode_result(const char *raw_result_file, const char *decoded_result_file) {
+    // declare enclave & return variables
+    sgx_enclave_id_t eid = 0;
+    sgx_launch_token_t token = {0};
+    sgx_status_t ecall_status, enclave_status;
+    int updated, ret;
+    ssize_t sret;
+
+    ////////////////////////////////////////////////
+    // initialise enclave
+    ////////////////////////////////////////////////
+    enclave_status = sgx_create_enclave(ENCLAVE_FILE, SGX_DEBUG_FLAG, &token, &updated, &eid, NULL);
+    if (enclave_status != SGX_SUCCESS) {
+        error_print("Failed to initialise enclave");
+        return -1;
+    }
+    info_print("Enclave successfully initilised");
+
+    // initialise common context
+    ecall_status = ecall_common_initialise(eid, &ret, 1);
+    if (ecall_status != SGX_SUCCESS || ret < 0) {
+        error_print("Failed to initialise common context");
+
+        sgx_destroy_enclave(eid);
+
+        return -1;
+    }
+
+    // allocate memory for result
+    uint8_t result_data[RESULT_SIZE];
+    uint64_t decoded_result = 0;
+
+    // load raw result from file
+    sret = load_file(raw_result_file, result_data, RESULT_SIZE);
+    if (sret < 0) {
+        error_print("Failed to load raw result from file");
+
+        sgx_destroy_enclave(eid);
+
+        return -1;
+    }
+
+    // decode result
+    ecall_status = ecall_decode_result(eid, &ret, result_data, &decoded_result);
+    if (ecall_status != SGX_SUCCESS || ret < 0) {
+        error_print("Failed to decode result");
+
+        sgx_destroy_enclave(eid);
+
+        return -1;
+    }
+
+    // result decoded
+    printf("Decoded result: %lu\n", decoded_result);
+
+    // save decoded result to file
+    char result_text[256];
+    snprintf((char *) result_text, sizeof(result_text), "%lu\n", decoded_result);
+    sret = save_file(decoded_result_file, (const uint8_t *) result_text,
+                     strnlen((const char *) result_text, sizeof(result_text)));
+    if (sret < 0) {
+        error_print("Failed to save decoded result to file");
+
+        sgx_destroy_enclave(eid);
+
+        return -1;
+    }
+
+    ////////////////////////////////////////////////
+    // destroy enclave
+    ////////////////////////////////////////////////
+    enclave_status = sgx_destroy_enclave(eid);
+    if (enclave_status != SGX_SUCCESS) {
+        error_print("Failed to destroy enclave");
+        return -1;
+    }
+    info_print("Enclave successfully destroyed");
+
+    return 0;
+}
+
 /***************************************************
  * main
  ***************************************************/
@@ -141,27 +179,6 @@ int main(int argc, char **argv) {
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         fprintf(stderr, "signal(): %s\n", strerror(errno));
     }
-
-    /*int psize = 0;
-    IppStatus pstatus = ippsECCPGetSizeStd256r1(&psize);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("app: ippsECCPGetSizeStd256r1 failed");
-        ocall_debug_print("\n\n\n");
-        return -1;
-    }
-    char msg[100];
-    snprintf(msg, sizeof(msg), "app: IppsECCPState size: %d", psize);
-    ocall_debug_print(msg);*/
-
-    /*ecall_status = ecall_test_crypto(eid, &ret);
-    if (ecall_status != SGX_SUCCESS || is_error(ret)) {
-        error_print("ecall_test_crypto failed.");
-    } else {
-        info_print("test_crypto succeded.");
-    }
-
-    ecall_status = ecall_common_initialise(eid, &ret, 1000);
-    printf("ecall_status: %d, eid: %lu, ret: %d\n", ecall_status, eid, ret);*/
 
     ////////////////////////////////////////////////
     // read input arguments 
@@ -267,11 +284,25 @@ int main(int argc, char **argv) {
     }
 
     if (strcmp(m_value, "test") == 0) {
-        int ret = test_ecall();
-        printf("test_ecall returned %d\n", ret);
+        int ret = test_ecalls();
+        printf("test_ecalls returned %d\n", ret);
         if (ret < 0) {
             return 1;
         }
+
+        return 0;
+
+    } else if (strcmp(m_value, "decode_result") == 0) {
+        if (s_flag != 1) {
+            s_value = RESULT_FILE;
+        }
+
+        printf("Decoding\n");
+        int ret = decode_result(s_value, DECODED_RESULT_FILE);
+        if (ret < 0) {
+            return 1;
+        }
+        printf("Decoded result saved to " DECODED_RESULT_FILE "\n");
 
         return 0;
 
@@ -549,99 +580,6 @@ int main(int argc, char **argv) {
             pthread_barrier_wait(online_ca_thread_barrier);
         }
     }
-
-
-
-
-
-    /*if (stop != 1) {
-        // show help
-        if (h_flag) {
-            show_help();
-        }
-
-            // show version
-        else if (v_flag) {
-            show_version();
-        }
-
-            // run tests
-        else if (t_flag) {
-            info_print("Running tests...");
-            if (test(eid) != 0) { error_print("One or more tests failed."); }
-            else { info_print("All tests successfully passed."); }
-        }
-
-            // create new wallet
-        else if (n_value != NULL) {
-            ecall_status = ecall_create_wallet(eid, &ret, n_value);
-            if (ecall_status != SGX_SUCCESS || is_error(ret)) {
-                error_print("Fail to create new wallet.");
-            } else {
-                info_print("Wallet successfully created.");
-            }
-        }
-
-            // change master-password
-        else if (p_value != NULL && c_value != NULL) {
-            ecall_status = ecall_change_master_password(eid, &ret, p_value, c_value);
-            if (ecall_status != SGX_SUCCESS || is_error(ret)) {
-                error_print("Fail change master-password.");
-            } else {
-                info_print("Master-password successfully changed.");
-            }
-        }
-
-            // show wallet
-        else if (p_value != NULL && s_flag) {
-            wallet_t *wallet = (wallet_t *) malloc(sizeof(wallet_t));
-            ecall_status = ecall_show_wallet(eid, &ret, p_value, wallet, sizeof(wallet_t));
-            if (ecall_status != SGX_SUCCESS || is_error(ret)) {
-                error_print("Fail to retrieve wallet.");
-            } else {
-                info_print("Wallet successfully retrieved.");
-                print_wallet(wallet);
-            }
-            free(wallet);
-        }
-
-            // add item
-        else if (p_value != NULL && a_flag && x_value != NULL && y_value != NULL && z_value != NULL) {
-            item_t *new_item = (item_t *) malloc(sizeof(item_t));
-            strcpy(new_item->title, x_value);
-            strcpy(new_item->username, y_value);
-            strcpy(new_item->password, z_value);
-            ecall_status = ecall_add_item(eid, &ret, p_value, new_item, sizeof(item_t));
-            if (ecall_status != SGX_SUCCESS || is_error(ret)) {
-                error_print("Fail to add new item to wallet.");
-            } else {
-                info_print("Item successfully added to the wallet.");
-            }
-            free(new_item);
-        }
-
-            // remove item
-        else if (p_value != NULL && r_value != NULL) {
-            char *p_end;
-            int index = (int) strtol(r_value, &p_end, 10);
-            if (r_value == p_end) {
-                error_print("Option -r requires an integer argument.");
-            } else {
-                ecall_status = ecall_remove_item(eid, &ret, p_value, index);
-                if (ecall_status != SGX_SUCCESS || is_error(ret)) {
-                    error_print("Fail to remove item.");
-                } else {
-                    info_print("Item successfully removed from the wallet.");
-                }
-            }
-        }
-
-            // display help
-        else {
-            error_print("Wrong inputs.");
-            show_help();
-        }
-    }*/
 
     ////////////////////////////////////////////////
     // exit success

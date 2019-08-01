@@ -9,6 +9,8 @@
 
 int ecall_common_initialise(uint32_t n);
 
+int ecall_decode_result(const uint8_t *result_data, uint64_t *decoded_result);
+
 int ecall_offline_t_initialise();
 
 int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, size_t Ws_data_size);

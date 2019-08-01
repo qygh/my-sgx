@@ -1,20 +1,20 @@
 /*
  * Copyright 2018 Alberto Sonnino
  * 
- * This file is part of SGX-WALLET.
+ * This file is part of MY-SGX.
  * 
- * SGX-WALLET is free software: you can redistribute it and/or modify
+ * MY-SGX is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  * 
- * SGX-WALLET is distributed in the hope that it will be useful,
+ * MY-SGX is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with SGX-WALLET.  If not, see <http://www.gnu.org/licenses/>.
+ * along with MY-SGX.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef APP_H_
 #define APP_H_
@@ -26,12 +26,12 @@
 #define APP_NAME "my-sgx"
 #define VERSION "0.0.1"
 #define ENCLAVE_FILE "enclave.signed.so"
-#define WALLET_FILE "wallet.seal"
 
 #define X_FILE "x.data"
 #define CTS_FILE "cts.data"
 #define D_FILE "d.data"
 #define RESULT_FILE "result.data"
+#define DECODED_RESULT_FILE "result_decoded.txt"
 
 #define EC_ORDER_BIT_SIZE 256
 #define EC_ORDER_SIZE   EC_ORDER_BIT_SIZE / 8

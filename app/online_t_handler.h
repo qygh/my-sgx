@@ -6,11 +6,9 @@
 #define MY_SGX_ONLINE_T_HANDLER_H
 
 #include "enclave_u.h"
+#include "sgx_urts.h"
 #include "app.h"
 #include "utils.h"
-#include "debug.h"
-#include "enclave.h"
-#include "test.h"
 
 struct online_t_args {
     pthread_barrier_t *barrier;

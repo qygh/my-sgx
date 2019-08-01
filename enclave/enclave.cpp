@@ -20,13 +20,9 @@
 #include "string.h"
 #include "my_enclave.h"
 
-#include "debug.h"
-#include "enclave.h"
-#include "wallet.h"
-
 #include "sgx_tseal.h"
 #include "sgx_tcrypto.h"
-#include "sealing/sealing.h"
+#include "sgx_trts.h"
 
 #include "stdio.h"
 #include "ipp/ippcp.h"
@@ -171,6 +167,10 @@ static struct online_u_context context_online_u = {0};
 
 static struct online_ca_context context_online_ca = {0};
 
+static int test_printpoint(IppsECCPPointState *P);
+
+static int test_printbn(IppsBigNumState *d);
+
 /*
  * Operations for BigNum and Point
  */
@@ -199,6 +199,13 @@ point_mul_scalar_neg(struct common_context *common, const IppsECCPPointState *po
 int ecall_common_initialise(uint32_t n); //Done
 
 static int common_initialise(struct common_context *common, uint32_t n); //Done
+
+/*
+ * Decode result by brute forcing discrete logarithms
+ */
+int ecall_decode_result(const uint8_t *result_data, uint64_t *decoded_result); // Done
+
+static int decode_result(struct common_context *common, const uint8_t *result_data, uint64_t *decoded_result); // Done
 
 /*
  * Offline operations for T
@@ -346,11 +353,15 @@ static int bn_set_value(struct common_context *common, IppsBigNumState *number, 
         return -1;
     }
 
-    // set random value
     int ipp_status = ippsSet_BN(IppsBigNumPOS, u32_size, value, number);
     if (ipp_status != ippStsNoErr) {
         return -1;
     }
+
+    /*ipp_status = ippsMod_BN(number, common->q, number);
+    if (ipp_status != ippStsNoErr) {
+        return -1;
+    }*/
 
     return 0;
 }
@@ -382,11 +393,6 @@ static int bn_set_value_random(struct common_context *common, IppsBigNumState *n
 
     // set random value
     if (bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value) < 0) {
-        return -1;
-    }
-
-    int ipp_status = ippsMod_BN(number, common->q, number);
-    if (ipp_status != ippStsNoErr) {
         return -1;
     }
 
@@ -617,6 +623,126 @@ static int common_initialise(struct common_context *common, uint32_t n) {
     return 0;
 }
 
+int ecall_decode_result(const uint8_t *result_data, uint64_t *decoded_result) {
+    return decode_result(&context_common, result_data, decoded_result);
+}
+
+static int decode_result(struct common_context *common, const uint8_t *result_data, uint64_t *decoded_result) {
+    // allocate memory for result point
+    IppsECCPPointState *Result = point_create_state(common);
+    if (Result == NULL) {
+        return -1;
+    }
+
+    {
+        // Set Result point coordinates from result_data
+        IppsBigNumState *x = bn_create_state(common);
+        if (x == NULL) {
+            free(Result);
+
+            return -1;
+        }
+
+        IppsBigNumState *y = bn_create_state(common);
+        if (y == NULL) {
+            free(Result);
+            free(x);
+
+            return -1;
+        }
+
+        int ret = bn_set_value(common, x, common->ec_order_u32_size, (const uint32_t *) (result_data));
+        if (ret < 0) {
+            free(Result);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        ret = bn_set_value(common, y, common->ec_order_u32_size,
+                           (const uint32_t *) (result_data + common->ec_order_size));
+        if (ret < 0) {
+            free(Result);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        int ipp_status = ippsECCPSetPoint(x, y, Result, common->E);
+        if (ipp_status != ippStsNoErr) {
+            free(Result);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        free(x);
+        free(y);
+    }
+
+    // allocate memory for temporary point
+    IppsECCPPointState *P = point_create_state(common);
+    if (P == NULL) {
+        free(Result);
+
+        return -1;
+    }
+
+    // allocate memory for result scalar
+    IppsBigNumState *result = bn_create_state(common);
+    if (result == NULL) {
+        free(Result);
+        free(P);
+
+        return -1;
+    }
+
+    // search for result
+    int failed = 0;
+    for (uint64_t i = 0; i <= UINT64_MAX; i++) {
+        // result = i
+        int ret = bn_set_value_u64(common, result, i);
+        if (ret < 0) {
+            failed = 1;
+            break;
+        }
+
+        // P = i * G
+        int ipp_status = ippsECCPMulPointScalar(common->G, result, P, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+
+        // check if P equals Result
+        IppECResult res;
+        ipp_status = ippsECCPComparePoint(P, Result, &res, common->E);
+        if (ipp_status != ippStsNoErr) {
+            failed = 1;
+            break;
+        }
+
+        // result found
+        if (res == ippECPointIsEqual) {
+            *decoded_result = i;
+            break;
+        }
+    }
+
+    free(Result);
+    free(P);
+    free(result);
+
+    if (failed) {
+        return -1;
+    }
+
+    return 0;
+}
+
 int ecall_offline_t_initialise() {
     return offline_t_initialise(&context_common, &context_offline_t);
 }
@@ -698,7 +824,7 @@ static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struc
     int failed = 0;
     for (uint32_t i = 0; i < common->n; i++) {
         // get W
-        size_t offset_x = i * common->ec_order_size;
+        size_t offset_x = i * common->ec_order_size * 2;
         memcpy(p_buffer, Ws_data + offset_x, common->ec_order_size);
         int ret = bn_set_value(common, x, p_buffer_len, p_buffer);
         if (ret < 0) {
@@ -763,11 +889,12 @@ static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struc
         }
 
         // compute Gxk * W
-        ipp_status = ippsECCPAddPoint(GxkW, Gk, GxkW, common->E);
+        ipp_status = ippsECCPAddPoint(GxkW, W, GxkW, common->E);
         if (ipp_status != ippStsNoErr) {
             failed = 1;
             break;
         }
+
     }
 
     if (failed) {
@@ -947,19 +1074,10 @@ offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_c
         return -1;
     }
 
-    IppsBigNumState *bn_exponent = bn_create_state_double_size(common);
-    if (bn_exponent == NULL) {
-        free(Ws);
-        free(bn_i_plus_w_plus_one);
-
-        return -1;
-    }
-
     int failed = 0;
     for (uint32_t i = 1; i <= common->n; i++) {
         // allocate memory for Wi
         IppsECCPPointState *W = point_create_state(common);
-        Ws[i - 1] = W;
         if (W == NULL) {
             failed = 1;
             break;
@@ -972,17 +1090,19 @@ offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_c
             break;
         }
 
-        int ipp_status = ippsMul_BN(offline_ca->e, bn_i_plus_w_plus_one, bn_exponent);
+        int ipp_status = ippsECCPMulPointScalar(common->G, offline_ca->e, W, common->E);
         if (ipp_status != ippStsNoErr) {
             failed = 1;
             break;
         }
 
-        ipp_status = ippsECCPMulPointScalar(common->G, bn_exponent, W, common->E);
+        ipp_status = ippsECCPMulPointScalar(W, bn_i_plus_w_plus_one, W, common->E);
         if (ipp_status != ippStsNoErr) {
             failed = 1;
             break;
         }
+
+        Ws[i - 1] = W;
     }
 
     if (failed) {
@@ -993,13 +1113,11 @@ offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_c
 
         free(Ws);
         free(bn_i_plus_w_plus_one);
-        free(bn_exponent);
 
         return -1;
     }
 
     free(bn_i_plus_w_plus_one);
-    free(bn_exponent);
 
     return 0;
 }
@@ -1068,7 +1186,7 @@ offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context
                 return -1;
             }
 
-            size_t offset_x = i * common->ec_order_size;
+            size_t offset_x = i * common->ec_order_size * 2;
             memcpy(Ws_data + offset_x, p_buffer, common->ec_order_size);
 
             // extract y-coordinate
@@ -1154,7 +1272,7 @@ static int online_t_set_res_and_get_result(struct common_context *common, struct
     ret += bn_set_value(common, ay, common->ec_order_u32_size, (const uint32_t *) (res_data + common->ec_order_size));
     ret += bn_set_value(common, bx, common->ec_order_u32_size,
                         (const uint32_t *) (res_data + (common->ec_order_size * 2)));
-    ret += bn_set_value(common, bx, common->ec_order_u32_size,
+    ret += bn_set_value(common, by, common->ec_order_u32_size,
                         (const uint32_t *) (res_data + (common->ec_order_size * 3)));
     if (ret != 0) {
         free(ax);
@@ -1223,6 +1341,7 @@ static int online_t_set_res_and_get_result(struct common_context *common, struct
         return -1;
     }
 
+    // -x * A
     ret = point_mul_scalar_neg(common, A, online_t->x, Result);
     if (ret < 0) {
         free(ax);
@@ -1236,6 +1355,7 @@ static int online_t_set_res_and_get_result(struct common_context *common, struct
         return -1;
     }
 
+    // B + (-x * A)
     ipp_status = ippsECCPAddPoint(B, Result, Result, common->E);
     if (ipp_status != ippStsNoErr) {
         free(ax);
@@ -1483,9 +1603,9 @@ online_u_set_cts_and_compute_ctres_pres_sres(struct common_context *common, stru
     for (uint32_t i = 0; i < common->n; i++) {
         uint32_t index = i + 1;
         uint8_t snp = online_u->snps[i];
+
         if (snp == 0) {
-            online_u->pres += index * snp;
-            online_u->sres += snp;
+            // no changes to ctres
         } else if (snp >= 1) {
             size_t ctax_offset = i * common->ec_order_size * 4;
             size_t ctay_offset = ctax_offset + common->ec_order_size;
@@ -1515,8 +1635,10 @@ online_u_set_cts_and_compute_ctres_pres_sres(struct common_context *common, stru
             }
 
             if (snp == 1) {
-                // add ct once
+                online_u->pres += index * snp;
+                online_u->sres += snp;
 
+                // add ct once
                 ipp_status = ippsECCPAddPoint(A, cta, A, common->E);
                 if (ipp_status != ippStsNoErr) {
                     failed = 1;
@@ -1528,8 +1650,10 @@ online_u_set_cts_and_compute_ctres_pres_sres(struct common_context *common, stru
                     break;
                 }
             } else if (snp > 1) {
-                // add ct twice
+                online_u->pres += index * 2;
+                online_u->sres += 2;
 
+                // add ct twice
                 ipp_status = ippsECCPAddPoint(A, cta, A, common->E);
                 if (ipp_status != ippStsNoErr) {
                     failed = 1;
@@ -1552,9 +1676,6 @@ online_u_set_cts_and_compute_ctres_pres_sres(struct common_context *common, stru
                     break;
                 }
             }
-
-            online_u->pres += index * snp;
-            online_u->sres += snp;
         }
     }
 
@@ -1727,6 +1848,8 @@ int ecall_online_ca_set_ctres_pres_sres_and_compute_res(const uint8_t *ctres_dat
 static int online_ca_set_ctres_pres_sres_and_compute_res(struct common_context *common,
                                                          struct online_ca_context *online_ca, const uint8_t *ctres_data,
                                                          const uint64_t *pres_data, const uint64_t *sres_data) {
+    const uint32_t *ctres_data_u4 = (const uint32_t *) ctres_data;
+
     IppsBigNumState *ax = bn_create_state(common);
     if (ax == NULL) {
         return -1;
@@ -1757,12 +1880,10 @@ static int online_ca_set_ctres_pres_sres_and_compute_res(struct common_context *
     }
 
     // set x and y coordinates
-    int ret = bn_set_value(common, ax, common->ec_order_u32_size, (const uint32_t *) (ctres_data));
-    ret += bn_set_value(common, ay, common->ec_order_u32_size, (const uint32_t *) (ctres_data + common->ec_order_size));
-    ret += bn_set_value(common, bx, common->ec_order_u32_size,
-                        (const uint32_t *) (ctres_data + (common->ec_order_size * 2)));
-    ret += bn_set_value(common, bx, common->ec_order_u32_size,
-                        (const uint32_t *) (ctres_data + (common->ec_order_size * 3)));
+    int ret = bn_set_value(common, ax, common->ec_order_u32_size, ctres_data_u4);
+    ret += bn_set_value(common, ay, common->ec_order_u32_size, ctres_data_u4 + common->ec_order_u32_size);
+    ret += bn_set_value(common, bx, common->ec_order_u32_size, ctres_data_u4 + common->ec_order_u32_size * 2);
+    ret += bn_set_value(common, by, common->ec_order_u32_size, ctres_data_u4 + common->ec_order_u32_size * 3);
     if (ret != 0) {
         free(ax);
         free(ay);
@@ -2102,6 +2223,63 @@ void test_print() {
     ocall_debug_print("test_print called");
 }
 
+static int test_printpoint(IppsECCPPointState *P) {
+    IppsBigNumState *x = bn_create_state(&context_common);
+    if (x == NULL) {
+        return -1;
+    }
+    IppsBigNumState *y = bn_create_state(&context_common);
+    if (y == NULL) {
+        free(x);
+
+        return -1;
+    }
+
+    // get x and y coordinates from point
+    int ipp_status = ippsECCPGetPoint(x, y, P, context_common.E);
+    if (ipp_status != ippStsNoErr) {
+        free(x);
+        free(y);
+
+        return -1;
+    }
+
+    free(x);
+    free(y);
+
+    return 0;
+}
+
+static int test_printbn(IppsBigNumState *d) {
+    IppsBigNumSGN sign;
+    int d_buffer_len = context_common.ec_order_u32_size * 4;
+    uint32_t d_buffer[d_buffer_len];
+
+    int ipp_status = ippsGet_BN(&sign, &d_buffer_len, d_buffer, d);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        ocall_debug_print("ippsGet_BN failed");
+        return -1;
+    }
+
+    char msg[256] = {0};
+    snprintf(msg, sizeof(msg), "buffer size: %lu", d_buffer_len * sizeof(uint32_t));
+    ocall_debug_print(msg);
+
+    ocall_debug_print("");
+    for (int i = 0; i < d_buffer_len * sizeof(uint32_t); i++) {
+        snprintf(msg, sizeof(msg), "%02x ", ((uint8_t * )(d_buffer))[i]);
+        ocall_print(msg);
+    }
+    ocall_debug_print("");
+    for (int i = d_buffer_len * sizeof(uint32_t) - 1; i >= 0; i--) {
+        snprintf(msg, sizeof(msg), "%02x", ((uint8_t * )(d_buffer))[i]);
+        ocall_print(msg);
+    }
+    ocall_print("\n\n");
+
+    return 0;
+}
+
 int ecall_test() {
     ocall_debug_print("\n\n\n");
     ocall_debug_print("test called");
@@ -2109,7 +2287,7 @@ int ecall_test() {
 
     char msg[256] = {0};
 
-    int my_ret = ecall_common_initialise(1000);
+    int my_ret = ecall_common_initialise(10);
     snprintf(msg, sizeof(msg), "ecall_common_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
@@ -2130,16 +2308,18 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_offline_ca_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
-    uint32_t ws[1000];
-    for (int i = 0; i < 1000; i++) {
-        ws[i] = i;
+    uint32_t ws[10];
+    for (int i = 0; i < 10; i++) {
+        ws[i] = 0;
     }
+    ws[3] = 10;
+    ws[9] = 100;
     my_ret = ecall_offline_ca_set_ws_and_compute_Ws(ws);
     snprintf(msg, sizeof(msg), "ecall_offline_ca_set_ws_and_compute_Ws returned %d", my_ret);
     ocall_debug_print(msg);
 
     uint8_t d_data[32] = {0};
-    uint8_t Ws_data[1000 * 32 * 2] = {0};
+    uint8_t Ws_data[10 * 32 * 2] = {0};
     my_ret = ecall_offline_ca_get_d_and_Ws(d_data, Ws_data, sizeof(Ws_data));
     snprintf(msg, sizeof(msg), "ecall_offline_ca_get_d_and_Ws returned %d", my_ret);
     ocall_debug_print(msg);
@@ -2149,7 +2329,7 @@ int ecall_test() {
     ocall_debug_print(msg);
 
     uint8_t x_data[32] = {0};
-    uint8_t cts_data[1000 * 32 * 4] = {0};
+    uint8_t cts_data[10 * 32 * 4] = {0};
     my_ret = ecall_offline_t_get_x_and_cts(x_data, cts_data, sizeof(cts_data));
     snprintf(msg, sizeof(msg), "ecall_offline_t_get_x_and_cts returned %d", my_ret);
     ocall_debug_print(msg);
@@ -2158,16 +2338,7 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_online_t_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
-    uint8_t snps[1000];
-    for (int i = 0; i < 300; i++) {
-        snps[i] = 0;
-    }
-    for (int i = 300; i < 600; i++) {
-        snps[i] = 1;
-    }
-    for (int i = 600; i < 1000; i++) {
-        snps[i] = 2;
-    }
+    uint8_t snps[10] = {0, 0, 0, 1, 0, 0, 0, 0, 0, 2};
     my_ret = ecall_online_u_initialise(snps);
     snprintf(msg, sizeof(msg), "ecall_online_u_initialise returned %d", my_ret);
     ocall_debug_print(msg);
@@ -2243,7 +2414,7 @@ int ecall_test() {
 
     return 0;
 
-    test_print();
+/*    test_print();
 
     sgx_status_t ret;
 
@@ -2255,7 +2426,7 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "hello value : %d", hello);
     ocall_debug_print(msg);
 
-    /* Test random number generation */
+    *//* Test random number generation *//*
     uint32_t rval = 0;
     ret = sgx_read_rand((unsigned char *) &rval, sizeof(rval));
     if (ret != SGX_SUCCESS) {
@@ -2267,7 +2438,7 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "random number: %u", rval);
     ocall_debug_print(msg);
 
-    /* Test IPP */
+    *//* Test IPP *//*
     int psize = 0;
     IppStatus pstatus;
 
@@ -2561,445 +2732,5 @@ int ecall_test() {
     ocall_debug_print("test exiting");
     ocall_debug_print("\n\n\n");
 
-    return RET_SUCCESS;
+    return RET_SUCCESS;*/
 }
-
-/**
- * @brief      Creates a new wallet with the provided master-password.
- *
- */
-int ecall_create_wallet(const char *master_password) {
-
-    //
-    // OVERVIEW:
-    //	1. check password policy
-    //	2. [ocall] abort if wallet already exist
-    //	3. create wallet
-    //	4. seal wallet
-    //	5. [ocall] save wallet
-    //	6. exit enclave
-    //
-    //
-    sgx_status_t ocall_status, sealing_status;
-    int ocall_ret;
-
-    DEBUG_PRINT("CREATING NEW WALLET...");
-
-
-    // 1. check passaword policy
-    if (strlen(master_password) < 8 || strlen(master_password) + 1 > MAX_ITEM_SIZE) {
-        return ERR_PASSWORD_OUT_OF_RANGE;
-    }
-    DEBUG_PRINT("[OK] Password policy successfully checked.");
-
-
-    // 2. abort if wallet already exist
-    ocall_status = ocall_is_wallet(&ocall_ret);
-    if (ocall_ret != 0) {
-        return ERR_WALLET_ALREADY_EXISTS;
-    }
-    DEBUG_PRINT("[OK] No pre-existing wallets.");
-
-
-    // 3. create new wallet
-    wallet_t *wallet = (wallet_t *) malloc(sizeof(wallet_t));
-    wallet->size = 0;
-    strncpy(wallet->master_password, master_password, strlen(master_password) + 1);
-    DEBUG_PRINT("[OK] New wallet successfully created.");
-
-
-    // 4. seal wallet
-    size_t sealed_size = sizeof(sgx_sealed_data_t) + sizeof(wallet_t);
-    uint8_t *sealed_data = (uint8_t *) malloc(sealed_size);
-    sealing_status = seal_wallet(wallet, (sgx_sealed_data_t *) sealed_data, sealed_size);
-    free(wallet);
-    if (sealing_status != SGX_SUCCESS) {
-        free(sealed_data);
-        return ERR_FAIL_SEAL;
-    }
-    DEBUG_PRINT("[OK] Seal wallet.");
-
-
-    // 5. save wallet
-    ocall_status = ocall_save_wallet(&ocall_ret, sealed_data, sealed_size);
-    free(sealed_data);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        return ERR_CANNOT_SAVE_WALLET;
-    }
-    DEBUG_PRINT("[OK] New wallet successfully saved.");
-
-
-    // 6. exit enclave
-    DEBUG_PRINT("WALLET SUCCESSFULLY CREATED.");
-    return RET_SUCCESS;
-}
-
-
-/**
- * @brief      Provides the wallet content. The sizes/length of 
- *             pointers need to be specified, otherwise SGX will
- *             assume a count of 1 for all pointers.
- *
- */
-int ecall_show_wallet(const char *master_password, wallet_t *wallet, size_t wallet_size) {
-
-    //
-    // OVERVIEW:
-    //	1. [ocall] load wallet
-    // 	2. unseal wallet
-    //	3. verify master-password
-    //	4. return wallet to app
-    //	5. exit enclave
-    //
-    //
-    sgx_status_t ocall_status, sealing_status;
-    int ocall_ret;
-
-    DEBUG_PRINT("RETURNING WALLET TO APP...");
-
-
-    // 1. load wallet
-    size_t sealed_size = sizeof(sgx_sealed_data_t) + sizeof(wallet_t);
-    uint8_t *sealed_data = (uint8_t *) malloc(sealed_size);
-    ocall_status = ocall_load_wallet(&ocall_ret, sealed_data, sealed_size);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        free(sealed_data);
-        return ERR_CANNOT_LOAD_WALLET;
-    }
-    DEBUG_PRINT("[ok] Wallet successfully loaded.");
-
-
-    // 2. unseal loaded wallet
-    uint32_t plaintext_size = sizeof(wallet_t);
-    wallet_t *unsealed_wallet = (wallet_t *) malloc(plaintext_size);
-    sealing_status = unseal_wallet((sgx_sealed_data_t *) sealed_data, unsealed_wallet, plaintext_size);
-    free(sealed_data);
-    if (sealing_status != SGX_SUCCESS) {
-        free(unsealed_wallet);
-        return ERR_FAIL_UNSEAL;
-    }
-    DEBUG_PRINT("[OK] Unseal wallet.");
-
-
-    // 3. verify master-password
-    if (strcmp(unsealed_wallet->master_password, master_password) != 0) {
-        free(unsealed_wallet);
-        return ERR_WRONG_MASTER_PASSWORD;
-    }
-    DEBUG_PRINT("[ok] Master-password successfully verified.");
-
-
-    // 4. return wallet to app
-    (*wallet) = *unsealed_wallet;
-    free(unsealed_wallet);
-    DEBUG_PRINT("[ok] Wallet successfully saved to buffer.");
-
-
-    // 5. exit enclave
-    DEBUG_PRINT("WALLET SUCCESSFULLY RETURNED TO APP.");
-    return RET_SUCCESS;
-}
-
-
-/**
- * @brief      Changes the wallet's master-password.
- *
- */
-int ecall_change_master_password(const char *old_password, const char *new_password) {
-
-    //
-    // OVERVIEW:
-    //	1. check password policy
-    //	2. [ocall] load wallet
-    // 	3. unseal wallet
-    //	4. verify old password
-    //	5. update password
-    //	6. seal wallet
-    // 	7. [ocall] save sealed wallet
-    //	8. exit enclave
-    //
-    //
-    sgx_status_t ocall_status, sealing_status;
-    int ocall_ret;
-
-    DEBUG_PRINT("CHANGING MASTER PASSWORD...");
-
-
-    // 1. check passaword policy
-    if (strlen(new_password) < 8 || strlen(new_password) + 1 > MAX_ITEM_SIZE) {
-        return ERR_PASSWORD_OUT_OF_RANGE;
-    }
-    DEBUG_PRINT("[ok] Password policy successfully checked.");
-
-
-    // 2. load wallet
-    size_t sealed_size = sizeof(sgx_sealed_data_t) + sizeof(wallet_t);
-    uint8_t *sealed_data = (uint8_t *) malloc(sealed_size);
-    ocall_status = ocall_load_wallet(&ocall_ret, sealed_data, sealed_size);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        free(sealed_data);
-        return ERR_CANNOT_LOAD_WALLET;
-    }
-    DEBUG_PRINT("[ok] Wallet successfully loaded.");
-
-
-    // 3. unseal wallet
-    uint32_t plaintext_size = sizeof(wallet_t);
-    wallet_t *wallet = (wallet_t *) malloc(plaintext_size);
-    sealing_status = unseal_wallet((sgx_sealed_data_t *) sealed_data, wallet, plaintext_size);
-    free(sealed_data);
-    if (sealing_status != SGX_SUCCESS) {
-        free(wallet);
-        return ERR_FAIL_UNSEAL;
-    }
-    DEBUG_PRINT("[OK] Unseal wallet.");
-
-
-    // 4. verify master-password
-    if (strcmp(wallet->master_password, old_password) != 0) {
-        free(wallet);
-        return ERR_WRONG_MASTER_PASSWORD;
-    }
-    DEBUG_PRINT("[ok] Master-password successfully verified.");
-
-
-    // 5. update password
-    strncpy(wallet->master_password, new_password, strlen(new_password) + 1);
-    DEBUG_PRINT("[ok] Successfully updated master-password.");
-
-
-    // 6. seal wallet
-    sealed_data = (uint8_t *) malloc(sealed_size);
-    sealing_status = seal_wallet(wallet, (sgx_sealed_data_t *) sealed_data, sealed_size);
-    free(wallet);
-    if (sealing_status != SGX_SUCCESS) {
-        free(wallet);
-        free(sealed_data);
-        return ERR_FAIL_SEAL;
-    }
-    DEBUG_PRINT("[OK] Seal wallet.");
-
-
-    // 7. save wallet
-    ocall_status = ocall_save_wallet(&ocall_ret, sealed_data, sealed_size);
-    free(sealed_data);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        return ERR_CANNOT_SAVE_WALLET;
-    }
-    DEBUG_PRINT("[OK] Wallet successfully saved.");
-
-
-    // 6. exit enclave
-    DEBUG_PRINT("MASTER PASSWORD SUCCESSFULLY CHANGED.");
-    return RET_SUCCESS;
-}
-
-
-/**
- * @brief      Adds an item to the wallet. The sizes/length of 
- *             pointers need to be specified, otherwise SGX will
- *             assume a count of 1 for all pointers.
- *
- */
-int ecall_add_item(const char *master_password, const item_t *item, const size_t item_size) {
-
-    //
-    // OVERVIEW:
-    //	1. [ocall] load wallet
-    //	2. unseal wallet
-    //	3. verify master-password
-    //	4. check input length
-    //	5. add item to the wallet
-    //	6. seal wallet
-    //	7. [ocall] save sealed wallet
-    //	8. exit enclave
-    //
-    //
-    sgx_status_t ocall_status, sealing_status;
-    int ocall_ret;
-
-    DEBUG_PRINT("ADDING ITEM TO THE WALLET...");
-
-
-    // 2. load wallet
-    size_t sealed_size = sizeof(sgx_sealed_data_t) + sizeof(wallet_t);
-    uint8_t *sealed_data = (uint8_t *) malloc(sealed_size);
-    ocall_status = ocall_load_wallet(&ocall_ret, sealed_data, sealed_size);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        free(sealed_data);
-        return ERR_CANNOT_LOAD_WALLET;
-    }
-    DEBUG_PRINT("[ok] Wallet successfully loaded.");
-
-
-    // 3. unseal wallet
-    uint32_t plaintext_size = sizeof(wallet_t);
-    wallet_t *wallet = (wallet_t *) malloc(plaintext_size);
-    sealing_status = unseal_wallet((sgx_sealed_data_t *) sealed_data, wallet, plaintext_size);
-    free(sealed_data);
-    if (sealing_status != SGX_SUCCESS) {
-        free(wallet);
-        return ERR_FAIL_UNSEAL;
-    }
-    DEBUG_PRINT("[OK] Unseal wallet.");
-
-
-    // 3. verify master-password
-    if (strcmp(wallet->master_password, master_password) != 0) {
-        free(wallet);
-        return ERR_WRONG_MASTER_PASSWORD;
-    }
-    DEBUG_PRINT("[ok] Master-password successfully verified.");
-
-
-    // 4. check input length
-    if (strlen(item->title) + 1 > MAX_ITEM_SIZE ||
-        strlen(item->username) + 1 > MAX_ITEM_SIZE ||
-        strlen(item->password) + 1 > MAX_ITEM_SIZE
-            ) {
-        free(wallet);
-        return ERR_ITEM_TOO_LONG;
-    }
-    DEBUG_PRINT("[ok] Item successfully verified.");
-
-
-    // 5. add item to the wallet
-    size_t wallet_size = wallet->size;
-    if (wallet_size >= MAX_ITEMS) {
-        free(wallet);
-        return ERR_WALLET_FULL;
-    }
-    wallet->items[wallet_size] = *item;
-    ++wallet->size;
-    DEBUG_PRINT("[OK] Item successfully added.");
-
-
-    // 6. seal wallet
-    sealed_data = (uint8_t *) malloc(sealed_size);
-    sealing_status = seal_wallet(wallet, (sgx_sealed_data_t *) sealed_data, sealed_size);
-    free(wallet);
-    if (sealing_status != SGX_SUCCESS) {
-        free(wallet);
-        free(sealed_data);
-        return ERR_FAIL_SEAL;
-    }
-    DEBUG_PRINT("[OK] Seal wallet.");
-
-
-    // 7. save wallet
-    ocall_status = ocall_save_wallet(&ocall_ret, sealed_data, sealed_size);
-    free(sealed_data);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        return ERR_CANNOT_SAVE_WALLET;
-    }
-    DEBUG_PRINT("[OK] Wallet successfully saved.");
-
-
-    // 8. exit enclave
-    DEBUG_PRINT("ITEM SUCCESSFULLY ADDED TO THE WALLET.");
-    return RET_SUCCESS;
-}
-
-
-/**
- * @brief      Removes an item from the wallet. The sizes/length of 
- *             pointers need to be specified, otherwise SGX will
- *             assume a count of 1 for all pointers.
- *
- */
-int ecall_remove_item(const char *master_password, const int index) {
-
-    //
-    // OVERVIEW:
-    //	1. check index bounds
-    //	2. [ocall] load wallet
-    //	3. unseal wallet
-    //	4. verify master-password
-    //	5. remove item from the wallet
-    //	6. seal wallet
-    //	7. [ocall] save sealed wallet
-    //	8. exit enclave
-    //
-    //
-    sgx_status_t ocall_status, sealing_status;
-    int ocall_ret;
-
-    DEBUG_PRINT("REMOVING ITEM FROM THE WALLET...");
-
-
-    // 1. check index bounds
-    if (index < 0 || index >= MAX_ITEMS) {
-        return ERR_ITEM_DOES_NOT_EXIST;
-    }
-    DEBUG_PRINT("[OK] Successfully checked index bounds.");
-
-
-    // 2. load wallet
-    size_t sealed_size = sizeof(sgx_sealed_data_t) + sizeof(wallet_t);
-    uint8_t *sealed_data = (uint8_t *) malloc(sealed_size);
-    ocall_status = ocall_load_wallet(&ocall_ret, sealed_data, sealed_size);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        free(sealed_data);
-        return ERR_CANNOT_LOAD_WALLET;
-    }
-    DEBUG_PRINT("[ok] Wallet successfully loaded.");
-
-
-    // 3. unseal wallet
-    uint32_t plaintext_size = sizeof(wallet_t);
-    wallet_t *wallet = (wallet_t *) malloc(plaintext_size);
-    sealing_status = unseal_wallet((sgx_sealed_data_t *) sealed_data, wallet, plaintext_size);
-    free(sealed_data);
-    if (sealing_status != SGX_SUCCESS) {
-        free(wallet);
-        return ERR_FAIL_UNSEAL;
-    }
-    DEBUG_PRINT("[OK] Unseal wallet.");
-
-
-    // 4. verify master-password
-    if (strcmp(wallet->master_password, master_password) != 0) {
-        free(wallet);
-        return ERR_WRONG_MASTER_PASSWORD;
-    }
-    DEBUG_PRINT("[ok] Master-password successfully verified.");
-
-
-    // 5. remove item from the wallet
-    size_t wallet_size = wallet->size;
-    if (index >= wallet_size) {
-        free(wallet);
-        return ERR_ITEM_DOES_NOT_EXIST;
-    }
-    for (int i = index; i < wallet_size - 1; ++i) {
-        wallet->items[i] = wallet->items[i + 1];
-    }
-    --wallet->size;
-    DEBUG_PRINT("[OK] Item successfully removed.");
-
-
-    // 6. seal wallet
-    sealed_data = (uint8_t *) malloc(sealed_size);
-    sealing_status = seal_wallet(wallet, (sgx_sealed_data_t *) sealed_data, sealed_size);
-    free(wallet);
-    if (sealing_status != SGX_SUCCESS) {
-        free(sealed_data);
-        return ERR_FAIL_SEAL;
-    }
-    DEBUG_PRINT("[OK] Seal wallet.");
-
-
-    // 7. save wallet
-    ocall_status = ocall_save_wallet(&ocall_ret, sealed_data, sealed_size);
-    free(sealed_data);
-    if (ocall_ret != 0 || ocall_status != SGX_SUCCESS) {
-        return ERR_CANNOT_SAVE_WALLET;
-    }
-    DEBUG_PRINT("[OK] Wallet successfully saved.");
-
-
-    // 8. exit enclave
-    DEBUG_PRINT("ITEM SUCCESSFULLY REMOVED FROM THE WALLET.");
-    return RET_SUCCESS;
-}
-

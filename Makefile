@@ -65,7 +65,7 @@ endif
 ifeq ($(SGX_DEBUG), 1)
 		SGX_COMMON_CFLAGS += -O0 -g
 else
-		SGX_COMMON_CFLAGS += -O2
+		SGX_COMMON_CFLAGS += -O3
 endif
 
 ######## App Settings ########
@@ -76,7 +76,7 @@ else
 	Urts_Library_Name := sgx_urts
 endif
 
-App_Cpp_Files := app/app.cpp app/utils.cpp app/test.cpp app/offline_t_handler.cpp app/offline_ca_handler.cpp app/online_u_handler.cpp app/online_t_handler.cpp app/online_ca_handler.cpp
+App_Cpp_Files := app/app.cpp app/utils.cpp app/offline_t_handler.cpp app/offline_ca_handler.cpp app/online_u_handler.cpp app/online_t_handler.cpp app/online_ca_handler.cpp
 App_Include_Paths := -Iapp -I$(SGX_SDK)/include -Iinclude -Itest -I$(IPPCP_SDK)/include
 
 App_C_Flags := $(SGX_COMMON_CFLAGS) -fPIC -Wno-attributes $(App_Include_Paths)
@@ -117,7 +117,7 @@ else
 endif
 Crypto_Library_Name := sgx_tcrypto
 
-Enclave_Cpp_Files := enclave/enclave.cpp enclave/sealing/sealing.cpp
+Enclave_Cpp_Files := enclave/enclave.cpp
 Enclave_Include_Paths := -Ienclave -Iinclude -I$(SGX_SDK)/include -I$(SGX_SDK)/include/tlibc -I$(SGX_SDK)/include/stlport
 
 Enclave_C_Flags := $(SGX_COMMON_CFLAGS) -nostdinc -fvisibility=hidden -fpie -fstack-protector $(Enclave_Include_Paths)
