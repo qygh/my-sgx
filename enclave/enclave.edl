@@ -18,9 +18,7 @@
  */
  
 enclave {
-
     // includes
-    //include "wallet.h"
 
 
     // define ECALLs
