@@ -358,11 +358,6 @@ static int bn_set_value(struct common_context *common, IppsBigNumState *number, 
         return -1;
     }
 
-    /*ipp_status = ippsMod_BN(number, common->q, number);
-    if (ipp_status != ippStsNoErr) {
-        return -1;
-    }*/
-
     return 0;
 }
 
@@ -393,6 +388,11 @@ static int bn_set_value_random(struct common_context *common, IppsBigNumState *n
 
     // set random value
     if (bn_set_value(common, number, common->ec_order_u32_size, (const uint32_t *) rand_value) < 0) {
+        return -1;
+    }
+
+    int ipp_status = ippsMod_BN(number, common->q, number);
+    if (ipp_status != ippStsNoErr) {
         return -1;
     }
 
