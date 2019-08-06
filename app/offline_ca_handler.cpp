@@ -114,6 +114,7 @@ void *offline_ca_handler(void *arg) {
     }
 
     // get d and Ws
+    printf("d_data_len: %lu\n", d_data_len);
     ecall_status = ecall_offline_ca_get_d_and_Ws(eid, &ret, d_data, &d_data_len, Ws_data, Ws_data_len);
     if (ecall_status != SGX_SUCCESS || ret < 0) {
         error_print("Failed to get d and Ws");

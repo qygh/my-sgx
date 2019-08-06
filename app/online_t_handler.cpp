@@ -120,7 +120,7 @@ void *online_t_handler(void *arg) {
     }
 
     // unseal cts
-    size_t cts_data_unsealed_len = cts_data_len - SEAL_ADDITIONAL_SIZE;
+    size_t cts_data_unsealed_len = cts_size_from_n(n) - SEAL_ADDITIONAL_SIZE;
     uint8_t *cts_data_unsealed = (uint8_t *) calloc(cts_data_unsealed_len, 1);
     if (cts_data_unsealed == NULL) {
         error_print("Failed to allocate memory for unsealed cts");

@@ -988,14 +988,25 @@ offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context 
     }
 
     // seal x
-    sgx_ret = sgx_seal_data(0, NULL, x_data_size, x_data, x_sealed_size, (sgx_sealed_data_t *) x_data_sealed);
-    if (sgx_ret != SGX_SUCCESS) {
+    // temporary buffer for sealed data
+    uint8_t *x_data_sealed_temp = (uint8_t *) malloc(x_sealed_size);
+    if (x_data_sealed_temp == NULL) {
         free(x_data);
         free(cts_data);
 
         return -1;
     }
+    sgx_ret = sgx_seal_data(0, NULL, x_data_size, x_data, x_sealed_size, (sgx_sealed_data_t *) x_data_sealed_temp);
+    if (sgx_ret != SGX_SUCCESS) {
+        free(x_data);
+        free(cts_data);
+        free(x_data_sealed_temp);
+
+        return -1;
+    }
     *x_data_sealed_size = x_sealed_size;
+    memcpy(x_data_sealed, x_data_sealed_temp, x_sealed_size);
+    free(x_data_sealed_temp);
 
     // extract values of cts
     IppsBigNumState *x = bn_create_state(common);
@@ -1061,8 +1072,9 @@ offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context 
     }
 
     // seal cts
-    sgx_ret = sgx_seal_data(0, NULL, cts_data_size, cts_data, cts_sealed_size, (sgx_sealed_data_t *) cts_data_sealed);
-    if (sgx_ret != SGX_SUCCESS) {
+    // temporary buffer for sealed data
+    uint8_t *cts_data_sealed_temp = (uint8_t *) malloc(cts_sealed_size);
+    if (cts_data_sealed_temp == NULL) {
         free(x_data);
         free(cts_data);
         free(x);
@@ -1070,7 +1082,20 @@ offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context 
 
         return -1;
     }
+    sgx_ret = sgx_seal_data(0, NULL, cts_data_size, cts_data, cts_sealed_size,
+                            (sgx_sealed_data_t *) cts_data_sealed_temp);
+    if (sgx_ret != SGX_SUCCESS) {
+        free(x_data);
+        free(cts_data);
+        free(x);
+        free(y);
+        free(cts_data_sealed_temp);
+
+        return -1;
+    }
     *cts_data_sealed_size = cts_sealed_size;
+    memcpy(cts_data_sealed, cts_data_sealed_temp, cts_sealed_size);
+    free(cts_data_sealed_temp);
 
     free(x_data);
     free(cts_data);
@@ -1240,13 +1265,23 @@ offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context
     }
 
     // seal d
-    sgx_ret = sgx_seal_data(0, NULL, d_data_size, d_data, d_sealed_size, (sgx_sealed_data_t *) d_data_sealed);
-    if (sgx_ret != SGX_SUCCESS) {
+    // temporary buffer for sealed data
+    uint8_t *d_data_sealed_temp = (uint8_t *) malloc(d_sealed_size);
+    if (d_data_sealed_temp == NULL) {
         free(d_data);
 
         return -1;
     }
+    sgx_ret = sgx_seal_data(0, NULL, d_data_size, d_data, d_sealed_size, (sgx_sealed_data_t *) d_data_sealed_temp);
+    if (sgx_ret != SGX_SUCCESS) {
+        free(d_data);
+        free(d_data_sealed_temp);
+
+        return -1;
+    }
     *d_data_sealed_size = d_sealed_size;
+    memcpy(d_data_sealed, d_data_sealed_temp, d_sealed_size);
+    free(d_data_sealed_temp);
 
     // extract values of Ws
     IppsBigNumState *x = bn_create_state(common);

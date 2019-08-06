@@ -51,7 +51,7 @@ int online_u_handler(struct online_u_args *arg) {
 
     // allocate memory for snps, cts, ctres, pres and sres
     size_t snps_data_len = snps_size_from_n(n);
-    size_t cts_data_len = cts_size_from_n(n);
+    size_t cts_data_len = cts_size_from_n(n) - SEAL_ADDITIONAL_SIZE;
 
     uint8_t *snps_data = (uint8_t *) calloc(snps_data_len, 1);
     uint8_t *cts_data = (uint8_t *) calloc(cts_data_len, 1);
