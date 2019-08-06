@@ -36,7 +36,9 @@ void *online_ca_handler(void *arg) {
     uint32_t n = (uint32_t) strtol(args.n, NULL, 10);
 
     // allocate memory for d, ctres, pres, sres and res
-    uint8_t *d_data = (uint8_t *) calloc(D_SIZE, 1);
+    size_t d_data_len = D_SIZE;
+
+    uint8_t *d_data = (uint8_t *) calloc(d_data_len, 1);
     uint8_t *ctres_data = (uint8_t *) calloc(CTRES_SIZE, 1);
     uint8_t *pres_data = (uint8_t *) calloc(PRES_SIZE, 1);
     uint8_t *sres_data = (uint8_t *) calloc(SRES_SIZE, 1);
@@ -57,7 +59,7 @@ void *online_ca_handler(void *arg) {
     }
 
     // load d from file
-    sret = load_file(args.d_file, d_data, D_SIZE);
+    sret = load_file_maxlen(args.d_file, d_data, d_data_len);
     if (sret < 0) {
         error_print("Failed to load d from file");
 
@@ -71,6 +73,7 @@ void *online_ca_handler(void *arg) {
 
         pthread_exit(NULL);
     }
+    d_data_len = sret;
 
     // initialise common context
     ecall_status = ecall_common_initialise(eid, &ret, n);
@@ -89,7 +92,7 @@ void *online_ca_handler(void *arg) {
     }
 
     // initialise online CA context
-    ecall_status = ecall_online_ca_initialise(eid, &ret, d_data);
+    ecall_status = ecall_online_ca_initialise(eid, &ret, d_data, d_data_len);
     if (ecall_status != SGX_SUCCESS || ret < 0) {
         error_print("Failed to initialise online CA context");
 

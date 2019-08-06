@@ -116,6 +116,27 @@ void show_version() {
     printf("v%s\n", VERSION);
 }
 
+ssize_t load_file_maxlen(const char *filename, uint8_t *buffer, size_t length) {
+    std::ifstream file(filename, std::ios::in | std::ios::binary);
+    if (file.fail()) {
+        return -1;
+    }
+
+    ssize_t bytes_read = 0;
+    file.read((char *) buffer, length);
+    if (file.fail()) {
+        ssize_t l = file.gcount();
+        if(length > 0 && l > 0) {
+            bytes_read = l;
+        }
+    } else {
+        bytes_read = length;
+    }
+
+    file.close();
+    return bytes_read;
+}
+
 ssize_t load_file(const char *filename, uint8_t *buffer, size_t length) {
     std::ifstream file(filename, std::ios::in | std::ios::binary);
     if (file.fail()) {
@@ -124,6 +145,7 @@ ssize_t load_file(const char *filename, uint8_t *buffer, size_t length) {
 
     file.read((char *) buffer, length);
     if (file.fail()) {
+        file.close();
         return -1;
     }
 
@@ -139,6 +161,7 @@ ssize_t save_file(const char *filename, const uint8_t *buffer, size_t length) {
 
     file.write((const char *) buffer, length);
     if (file.fail()) {
+        file.close();
         return -1;
     }
 

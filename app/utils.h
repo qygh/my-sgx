@@ -77,6 +77,8 @@ void show_help();
  */
 void show_version();
 
+ssize_t load_file_maxlen(const char *filename, uint8_t *buffer, size_t length);
+
 ssize_t load_file(const char *filename, uint8_t *buffer, size_t length);
 
 ssize_t save_file(const char *filename, const uint8_t *buffer, size_t length);

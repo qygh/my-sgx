@@ -41,11 +41,12 @@ int offline_t_handler(struct offline_t_args *arg) {
     // allocate memory for ws, Ws, x and cts
     size_t ws_data_len = ws_size_from_n(n);
     size_t Ws_data_len = Ws_size_from_n(n);
+    size_t x_data_len = X_SIZE;
     size_t cts_data_len = cts_size_from_n(n);
 
     uint8_t *ws_data = (uint8_t *) calloc(ws_data_len, 1);
     uint8_t *Ws_data = (uint8_t *) calloc(Ws_data_len, 1);
-    uint8_t *x_data = (uint8_t *) calloc(X_SIZE, 1);
+    uint8_t *x_data = (uint8_t *) calloc(x_data_len, 1);
     uint8_t *cts_data = (uint8_t *) calloc(cts_data_len, 1);
 
     if (ws_data == NULL || Ws_data == NULL || x_data == NULL || cts_data == NULL) {
@@ -154,7 +155,7 @@ int offline_t_handler(struct offline_t_args *arg) {
     }
 
     // get x and cts
-    ecall_status = ecall_offline_t_get_x_and_cts(eid, &ret, x_data, cts_data, cts_data_len);
+    ecall_status = ecall_offline_t_get_x_and_cts(eid, &ret, x_data, &x_data_len, cts_data, &cts_data_len);
     if (ecall_status != SGX_SUCCESS || ret < 0) {
         error_print("Failed to get x and cts");
 
@@ -169,7 +170,7 @@ int offline_t_handler(struct offline_t_args *arg) {
     }
 
     // save x to file
-    sret = save_file(X_FILE, x_data, X_SIZE);
+    sret = save_file(X_FILE, x_data, x_data_len);
     if (sret < 0) {
         error_print("Failed to save x to file");
 

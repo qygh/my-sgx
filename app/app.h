@@ -43,8 +43,9 @@
 #define MODE_ONLINE_T 4
 #define MODE_ONLINE_CA 5
 
-#define X_SIZE  EC_ORDER_SIZE
-#define D_SIZE  EC_ORDER_SIZE
+#define SEAL_ADDITIONAL_SIZE 2000
+#define X_SIZE  EC_ORDER_SIZE + SEAL_ADDITIONAL_SIZE
+#define D_SIZE  EC_ORDER_SIZE + SEAL_ADDITIONAL_SIZE
 #define CTRES_SIZE  EC_ORDER_SIZE * 4
 #define PRES_SIZE   8
 #define SRES_SIZE   8
@@ -52,7 +53,7 @@
 #define RESULT_SIZE EC_ORDER_SIZE * 2
 
 #define ws_size_from_n(n)   n * 4
-#define cts_size_from_n(n)  n * EC_ORDER_SIZE * 4
+#define cts_size_from_n(n)  n * EC_ORDER_SIZE * 4 + SEAL_ADDITIONAL_SIZE
 #define Ws_size_from_n(n)   n * EC_ORDER_SIZE * 2
 #define snps_size_from_n(n) n
 

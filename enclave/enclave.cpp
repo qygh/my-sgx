@@ -219,10 +219,13 @@ int ecall_offline_t_set_Ws_and_compute_cts(const uint8_t *Ws_data, size_t Ws_dat
 static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struct offline_t_context *offline_t,
                                             const uint8_t *Ws_data, const size_t Ws_data_size); //Done
 
-int ecall_offline_t_get_x_and_cts(uint8_t *x_data, uint8_t *cts_data, size_t cts_data_size); //Done
+int ecall_offline_t_get_x_and_cts(uint8_t *x_data_sealed, size_t *x_data_sealed_size, uint8_t *cts_data_sealed,
+                                  size_t *cts_data_sealed_size); //Done
 
-static int offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context *offline_t, uint8_t *x_data,
-                                   uint8_t *cts_data, size_t cts_data_size); //Done
+static int
+offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context *offline_t, uint8_t *x_data_sealed,
+                        size_t *x_data_sealed_size,
+                        uint8_t *cts_data_sealed, size_t *cts_data_sealed_size); //Done
 
 /*
  * Offline operations for CA
@@ -237,19 +240,30 @@ static int
 offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_ca_context *offline_ca,
                                  uint32_t *ws); //Done
 
-int ecall_offline_ca_get_d_and_Ws(uint8_t *d_data, uint8_t *Ws_data, size_t Ws_data_size); //Done
+int ecall_offline_ca_get_d_and_Ws(uint8_t *d_data_sealed, size_t *d_data_sealed_size, uint8_t *Ws_data,
+                                  size_t Ws_data_size); //Done
 
 static int
-offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint8_t *d_data,
+offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint8_t *d_data_sealed,
+                        size_t *d_data_sealed_size,
                         uint8_t *Ws_data, size_t Ws_data_size); //Done
 
 /*
  * Online operations for T
  */
-int ecall_online_t_initialise(const uint8_t *x_data); //Done
+int ecall_online_t_initialise(const uint8_t *x_data_sealed, size_t x_data_sealed_size); //Done
 
 static int
-online_t_initialise(struct common_context *common, struct online_t_context *online_t, const uint8_t *x_data); //Done
+online_t_initialise(struct common_context *common, struct online_t_context *online_t, const uint8_t *x_data_sealed,
+                    size_t x_data_sealed_size); //Done
+
+int ecall_online_t_unseal_cts(const uint8_t *cts_data_sealed, size_t cts_data_sealed_size, uint8_t *cts_data,
+                              size_t cts_data_size); //Done
+
+static int
+online_t_unseal_cts(struct common_context *common, struct online_t_context *online_t, const uint8_t *cts_data_sealed,
+                    size_t cts_data_sealed_size, uint8_t *cts_data,
+                    size_t cts_data_size); //Done
 
 int ecall_online_t_set_res_and_get_result(const uint8_t *res_data, uint8_t *result_data); //Done
 
@@ -279,10 +293,11 @@ online_u_get_ctres_pres_sres(struct common_context *common, struct online_u_cont
 /*
  * Online operations for CA
  */
-int ecall_online_ca_initialise(const uint8_t *d_data); //Done
+int ecall_online_ca_initialise(const uint8_t *d_data_sealed, size_t d_data_sealed_size); //Done
 
 static int
-online_ca_initialise(struct common_context *common, struct online_ca_context *online_ca, const uint8_t *d_data); //Done
+online_ca_initialise(struct common_context *common, struct online_ca_context *online_ca, const uint8_t *d_data_sealed,
+                     size_t d_data_sealed_size); //Done
 
 int ecall_online_ca_set_ctres_pres_sres_and_compute_res(const uint8_t *ctres_data, const uint64_t *pres_data,
                                                         const uint64_t *sres_data); //Done
@@ -923,88 +938,144 @@ static int offline_t_set_Ws_and_compute_cts(struct common_context *common, struc
     return 0;
 }
 
-int ecall_offline_t_get_x_and_cts(uint8_t *x_data, uint8_t *cts_data, size_t cts_data_size) {
-    return offline_t_get_x_and_cts(&context_common, &context_offline_t, x_data, cts_data, cts_data_size);
+int ecall_offline_t_get_x_and_cts(uint8_t *x_data_sealed, size_t *x_data_sealed_size, uint8_t *cts_data_sealed,
+                                  size_t *cts_data_sealed_size) {
+    return offline_t_get_x_and_cts(&context_common, &context_offline_t, x_data_sealed, x_data_sealed_size,
+                                   cts_data_sealed, cts_data_sealed_size);
 }
 
-static int offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context *offline_t, uint8_t *x_data,
-                                   uint8_t *cts_data, size_t cts_data_size) {
-    if (cts_data != NULL && cts_data_size < common->n * common->ec_order_size * 4) {
+static int
+offline_t_get_x_and_cts(struct common_context *common, struct offline_t_context *offline_t, uint8_t *x_data_sealed,
+                        size_t *x_data_sealed_size,
+                        uint8_t *cts_data_sealed, size_t *cts_data_sealed_size) {
+    // buffer for unsealed data
+    uint8_t *x_data = NULL;
+    uint32_t x_data_size = common->ec_order_size;
+    uint8_t *cts_data = NULL;
+    uint32_t cts_data_size = common->n * common->ec_order_size * 4;
+
+    // calculate sealed data size
+    uint32_t x_sealed_size = sgx_calc_sealed_data_size(0, x_data_size);
+    uint32_t cts_sealed_size = sgx_calc_sealed_data_size(0, cts_data_size);
+
+    // check if buffer sufficiently large
+    if (*x_data_sealed_size < x_sealed_size || *cts_data_sealed_size < cts_sealed_size) {
+        return -1;
+    }
+
+    x_data = (uint8_t *) malloc(x_data_size);
+    cts_data = (uint8_t *) malloc(cts_data_size);
+    if (x_data == NULL || cts_data == NULL) {
+        free(x_data);
+        free(cts_data);
+
         return -1;
     }
 
     int ipp_status = 0;
+    sgx_status_t sgx_ret;
 
-    if (x_data != NULL) {
-        // extract value of x
-        IppsBigNumSGN sign;
-        int x_buffer_len = common->ec_order_u32_size;
-        uint32_t x_buffer[x_buffer_len];
+    // extract value of x
+    IppsBigNumSGN sign;
+    int x_buffer_len = common->ec_order_u32_size;
 
-        ipp_status = ippsGet_BN(&sign, &x_buffer_len, x_buffer, offline_t->x);
-        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
-            return -1;
-        }
+    ipp_status = ippsGet_BN(&sign, &x_buffer_len, (Ipp32u *) x_data, offline_t->x);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        free(x_data);
+        free(cts_data);
 
-        memcpy(x_data, x_buffer, common->ec_order_size);
+        return -1;
     }
 
-    if (cts_data != NULL) {
-        // extract values of cts
-        IppsBigNumState *x = bn_create_state(common);
-        if (x == NULL) {
-            return -1;
-        }
-        IppsBigNumState *y = bn_create_state(common);
-        if (y == NULL) {
+    // seal x
+    sgx_ret = sgx_seal_data(0, NULL, x_data_size, x_data, x_sealed_size, (sgx_sealed_data_t *) x_data_sealed);
+    if (sgx_ret != SGX_SUCCESS) {
+        free(x_data);
+        free(cts_data);
+
+        return -1;
+    }
+    *x_data_sealed_size = x_sealed_size;
+
+    // extract values of cts
+    IppsBigNumState *x = bn_create_state(common);
+    if (x == NULL) {
+        free(x_data);
+        free(cts_data);
+
+        return -1;
+    }
+    IppsBigNumState *y = bn_create_state(common);
+    if (y == NULL) {
+        free(x_data);
+        free(cts_data);
+        free(x);
+
+        return -1;
+    }
+
+    for (uint32_t i = 0; i < common->n * 2; i++) {
+        // get x and y coordinates from point
+        ipp_status = ippsECCPGetPoint(x, y, offline_t->cts[i], common->E);
+
+        if (ipp_status != ippStsNoErr) {
+            free(x_data);
+            free(cts_data);
             free(x);
+            free(y);
 
             return -1;
         }
 
-        for (uint32_t i = 0; i < common->n * 2; i++) {
-            // get x and y coordinates from point
-            ipp_status = ippsECCPGetPoint(x, y, offline_t->cts[i], common->E);
+        IppsBigNumSGN sign;
+        int p_buffer_len = common->ec_order_u32_size;
+        uint32_t p_buffer[p_buffer_len];
 
-            if (ipp_status != ippStsNoErr) {
-                free(x);
-                free(y);
+        // extract x-coordinate
+        ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, x);
+        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+            free(x_data);
+            free(cts_data);
+            free(x);
+            free(y);
 
-                return -1;
-            }
-
-            IppsBigNumSGN sign;
-            int p_buffer_len = common->ec_order_u32_size;
-            uint32_t p_buffer[p_buffer_len];
-
-            // extract x-coordinate
-            ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, x);
-            if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
-                free(x);
-                free(y);
-
-                return -1;
-            }
-
-            size_t offset_x = i * common->ec_order_size * 2;
-            memcpy(cts_data + offset_x, p_buffer, common->ec_order_size);
-
-            // extract y-coordinate
-            ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, y);
-            if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
-                free(x);
-                free(y);
-
-                return -1;
-            }
-
-            size_t offset_y = offset_x + common->ec_order_size;
-            memcpy(cts_data + offset_y, p_buffer, common->ec_order_size);
+            return -1;
         }
 
+        size_t offset_x = i * common->ec_order_size * 2;
+        memcpy(cts_data + offset_x, p_buffer, common->ec_order_size);
+
+        // extract y-coordinate
+        ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, y);
+        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+            free(x_data);
+            free(cts_data);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        size_t offset_y = offset_x + common->ec_order_size;
+        memcpy(cts_data + offset_y, p_buffer, common->ec_order_size);
+    }
+
+    // seal cts
+    sgx_ret = sgx_seal_data(0, NULL, cts_data_size, cts_data, cts_sealed_size, (sgx_sealed_data_t *) cts_data_sealed);
+    if (sgx_ret != SGX_SUCCESS) {
+        free(x_data);
+        free(cts_data);
         free(x);
         free(y);
+
+        return -1;
     }
+    *cts_data_sealed_size = cts_sealed_size;
+
+    free(x_data);
+    free(cts_data);
+    free(x);
+    free(y);
 
     return 0;
 }
@@ -1122,112 +1193,188 @@ offline_ca_set_ws_and_compute_Ws(struct common_context *common, struct offline_c
     return 0;
 }
 
-int ecall_offline_ca_get_d_and_Ws(uint8_t *d_data, uint8_t *Ws_data, size_t Ws_data_size) {
-    return offline_ca_get_d_and_Ws(&context_common, &context_offline_ca, d_data, Ws_data, Ws_data_size);
+int ecall_offline_ca_get_d_and_Ws(uint8_t *d_data_sealed, size_t *d_data_sealed_size, uint8_t *Ws_data,
+                                  size_t Ws_data_size) {
+    return offline_ca_get_d_and_Ws(&context_common, &context_offline_ca, d_data_sealed, d_data_sealed_size, Ws_data,
+                                   Ws_data_size);
 }
 
 static int
-offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint8_t *d_data,
+offline_ca_get_d_and_Ws(struct common_context *common, struct offline_ca_context *offline_ca, uint8_t *d_data_sealed,
+                        size_t *d_data_sealed_size,
                         uint8_t *Ws_data, size_t Ws_data_size) {
+    // buffer for unsealed data
+    uint8_t *d_data = NULL;
+    uint32_t d_data_size = common->ec_order_size;
+
+    // calculate sealed data size
+    uint32_t d_sealed_size = sgx_calc_sealed_data_size(0, d_data_size);
+
+    // check if buffer sufficiently large
+    if (*d_data_sealed_size < d_sealed_size) {
+        return -1;
+    }
     if (Ws_data != NULL && Ws_data_size < common->n * common->ec_order_size * 2) {
         return -1;
     }
 
+    d_data = (uint8_t *) malloc(d_data_size);
+    if (d_data == NULL) {
+        free(d_data);
+
+        return -1;
+    }
+
     int ipp_status = 0;
+    sgx_status_t sgx_ret;
 
-    if (d_data != NULL) {
-        // extract value of d
-        IppsBigNumSGN sign;
-        int d_buffer_len = common->ec_order_u32_size;
-        uint32_t d_buffer[d_buffer_len];
+    // extract value of d
+    IppsBigNumSGN sign;
+    int d_buffer_len = common->ec_order_u32_size;
 
-        ipp_status = ippsGet_BN(&sign, &d_buffer_len, d_buffer, offline_ca->d);
-        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
-            return -1;
-        }
+    ipp_status = ippsGet_BN(&sign, &d_buffer_len, (Ipp32u *) d_data, offline_ca->d);
+    if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+        free(d_data);
 
-        memcpy(d_data, d_buffer, common->ec_order_size);
+        return -1;
     }
 
-    if (Ws_data != NULL) {
-        // extract values of Ws
-        IppsBigNumState *x = bn_create_state(common);
-        if (x == NULL) {
-            return -1;
-        }
-        IppsBigNumState *y = bn_create_state(common);
-        if (y == NULL) {
-            free(x);
+    // seal d
+    sgx_ret = sgx_seal_data(0, NULL, d_data_size, d_data, d_sealed_size, (sgx_sealed_data_t *) d_data_sealed);
+    if (sgx_ret != SGX_SUCCESS) {
+        free(d_data);
 
-            return -1;
-        }
+        return -1;
+    }
+    *d_data_sealed_size = d_sealed_size;
 
-        for (uint32_t i = 0; i < common->n; i++) {
-            // get x and y coordinates from point
-            ipp_status = ippsECCPGetPoint(x, y, offline_ca->Ws[i], common->E);
+    // extract values of Ws
+    IppsBigNumState *x = bn_create_state(common);
+    if (x == NULL) {
+        free(d_data);
 
-            if (ipp_status != ippStsNoErr) {
-                free(x);
-                free(y);
-
-                return -1;
-            }
-
-            IppsBigNumSGN sign;
-            int p_buffer_len = common->ec_order_u32_size;
-            uint32_t p_buffer[p_buffer_len];
-
-            // extract x-coordinate
-            ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, x);
-            if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
-                free(x);
-                free(y);
-
-                return -1;
-            }
-
-            size_t offset_x = i * common->ec_order_size * 2;
-            memcpy(Ws_data + offset_x, p_buffer, common->ec_order_size);
-
-            // extract y-coordinate
-            ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, y);
-            if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
-                free(x);
-                free(y);
-
-                return -1;
-            }
-
-            size_t offset_y = offset_x + common->ec_order_size;
-            memcpy(Ws_data + offset_y, p_buffer, common->ec_order_size);
-        }
-
+        return -1;
+    }
+    IppsBigNumState *y = bn_create_state(common);
+    if (y == NULL) {
+        free(d_data);
         free(x);
-        free(y);
+
+        return -1;
     }
+
+    for (uint32_t i = 0; i < common->n; i++) {
+        // get x and y coordinates from point
+        ipp_status = ippsECCPGetPoint(x, y, offline_ca->Ws[i], common->E);
+
+        if (ipp_status != ippStsNoErr) {
+            free(d_data);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        IppsBigNumSGN sign;
+        int p_buffer_len = common->ec_order_u32_size;
+        uint32_t p_buffer[p_buffer_len];
+
+        // extract x-coordinate
+        ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, x);
+        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+            free(d_data);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        size_t offset_x = i * common->ec_order_size * 2;
+        memcpy(Ws_data + offset_x, p_buffer, common->ec_order_size);
+
+        // extract y-coordinate
+        ipp_status = ippsGet_BN(&sign, &p_buffer_len, p_buffer, y);
+        if (sign == IppsBigNumNEG || ipp_status != ippStsNoErr) {
+            free(d_data);
+            free(x);
+            free(y);
+
+            return -1;
+        }
+
+        size_t offset_y = offset_x + common->ec_order_size;
+        memcpy(Ws_data + offset_y, p_buffer, common->ec_order_size);
+    }
+
+    free(d_data);
+    free(x);
+    free(y);
 
     return 0;
 }
 
-int ecall_online_t_initialise(const uint8_t *x_data) {
-    return online_t_initialise(&context_common, &context_online_t, x_data);
+int ecall_online_t_initialise(const uint8_t *x_data_sealed, size_t x_data_sealed_size) {
+    return online_t_initialise(&context_common, &context_online_t, x_data_sealed, x_data_sealed_size);
 }
 
 static int
-online_t_initialise(struct common_context *common, struct online_t_context *online_t, const uint8_t *x_data) {
+online_t_initialise(struct common_context *common, struct online_t_context *online_t, const uint8_t *x_data_sealed,
+                    size_t x_data_sealed_size) {
+    // buffer for unsealed data
+    uint8_t *x_data = (uint8_t *) malloc(common->ec_order_size);
+    uint32_t x_data_size = common->ec_order_size;
+    if (x_data == NULL) {
+        return -1;
+    }
+
+    sgx_status_t sgx_ret;
+
+    // unseal x
+    sgx_ret = sgx_unseal_data((sgx_sealed_data_t *) x_data_sealed, NULL, NULL, x_data, &x_data_size);
+    if (sgx_ret != SGX_SUCCESS || x_data_size != common->ec_order_size) {
+        free(x_data);
+
+        return -1;
+    }
+
     IppsBigNumState *x = bn_create_state(common);
     if (x == NULL) {
+        free(x_data);
+
         return -1;
     }
 
     int ret = bn_set_value(common, x, common->ec_order_u32_size, (const uint32_t *) x_data);
     if (ret < 0) {
+        free(x_data);
         free(x);
 
         return -1;
     }
 
     online_t->x = x;
+
+    free(x_data);
+
+    return 0;
+}
+
+int ecall_online_t_unseal_cts(const uint8_t *cts_data_sealed, size_t cts_data_sealed_size, uint8_t *cts_data,
+                              size_t cts_data_size) {
+    return online_t_unseal_cts(&context_common, &context_online_t, cts_data_sealed, cts_data_sealed_size, cts_data,
+                               cts_data_size);
+}
+
+static int
+online_t_unseal_cts(struct common_context *common, struct online_t_context *online_t, const uint8_t *cts_data_sealed,
+                    size_t cts_data_sealed_size, uint8_t *cts_data,
+                    size_t cts_data_size) {
+    // unseal cts
+    sgx_status_t sgx_ret = sgx_unseal_data((sgx_sealed_data_t *) cts_data_sealed, NULL, NULL, cts_data,
+                                           (uint32_t * ) & cts_data_size);
+    if (sgx_ret != SGX_SUCCESS || cts_data_size != common->n * common->ec_order_size * 4) {
+        return -1;
+    }
 
     return 0;
 }
@@ -1817,24 +1964,47 @@ online_u_get_ctres_pres_sres(struct common_context *common, struct online_u_cont
     return 0;
 }
 
-int ecall_online_ca_initialise(const uint8_t *d_data) {
-    return online_ca_initialise(&context_common, &context_online_ca, d_data);
+int ecall_online_ca_initialise(const uint8_t *d_data_sealed, size_t d_data_sealed_size) {
+    return online_ca_initialise(&context_common, &context_online_ca, d_data_sealed, d_data_sealed_size);
 }
 
 static int
-online_ca_initialise(struct common_context *common, struct online_ca_context *online_ca, const uint8_t *d_data) {
+online_ca_initialise(struct common_context *common, struct online_ca_context *online_ca, const uint8_t *d_data_sealed,
+                     size_t d_data_sealed_size) {
+    // buffer for unsealed data
+    uint8_t *d_data = (uint8_t *) malloc(common->ec_order_size);
+    uint32_t d_data_size = common->ec_order_size;
+    if (d_data == NULL) {
+        return -1;
+    }
+
+    sgx_status_t sgx_ret;
+
+    // unseal d
+    sgx_ret = sgx_unseal_data((sgx_sealed_data_t *) d_data_sealed, NULL, NULL, d_data, &d_data_size);
+    if (sgx_ret != SGX_SUCCESS || d_data_size != common->ec_order_size) {
+        free(d_data);
+
+        return -1;
+    }
+
     IppsBigNumState *d = bn_create_state(common);
     if (d == NULL) {
+        free(d_data);
+
         return -1;
     }
     online_ca->d = d;
 
     int ret = bn_set_value(common, d, common->ec_order_u32_size, (const uint32_t *) d_data);
     if (ret < 0) {
+        free(d_data);
         free(d);
 
         return -1;
     }
+
+    free(d_data);
 
     return 0;
 }
@@ -2318,23 +2488,30 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_offline_ca_set_ws_and_compute_Ws returned %d", my_ret);
     ocall_debug_print(msg);
 
-    uint8_t d_data[32] = {0};
+    uint8_t d_data[32 + 2000] = {0};
+    size_t d_data_size = sizeof(d_data);
     uint8_t Ws_data[10 * 32 * 2] = {0};
-    my_ret = ecall_offline_ca_get_d_and_Ws(d_data, Ws_data, sizeof(Ws_data));
+    my_ret = ecall_offline_ca_get_d_and_Ws(d_data, &d_data_size, Ws_data, sizeof(Ws_data));
     snprintf(msg, sizeof(msg), "ecall_offline_ca_get_d_and_Ws returned %d", my_ret);
+    ocall_debug_print(msg);
+    snprintf(msg, sizeof(msg), "d_data_size: %lu", d_data_size);
     ocall_debug_print(msg);
 
     my_ret = ecall_offline_t_set_Ws_and_compute_cts(Ws_data, sizeof(Ws_data));
     snprintf(msg, sizeof(msg), "ecall_offline_t_set_Ws_and_compute_cts returned %d", my_ret);
     ocall_debug_print(msg);
 
-    uint8_t x_data[32] = {0};
-    uint8_t cts_data[10 * 32 * 4] = {0};
-    my_ret = ecall_offline_t_get_x_and_cts(x_data, cts_data, sizeof(cts_data));
+    uint8_t x_data[32 + 2000] = {0};
+    size_t x_data_size = sizeof(x_data);
+    uint8_t cts_data[10 * 32 * 4 + 2000] = {0};
+    size_t cts_data_size = sizeof(cts_data);
+    my_ret = ecall_offline_t_get_x_and_cts(x_data, &x_data_size, cts_data, &cts_data_size);
     snprintf(msg, sizeof(msg), "ecall_offline_t_get_x_and_cts returned %d", my_ret);
     ocall_debug_print(msg);
+    snprintf(msg, sizeof(msg), "x_data_size: %lu, cts_data_size: %lu", x_data_size, cts_data_size);
+    ocall_debug_print(msg);
 
-    my_ret = ecall_online_t_initialise(x_data);
+    my_ret = ecall_online_t_initialise(x_data, x_data_size);
     snprintf(msg, sizeof(msg), "ecall_online_t_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
@@ -2343,11 +2520,17 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_online_u_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
-    my_ret = ecall_online_ca_initialise(d_data);
+    my_ret = ecall_online_ca_initialise(d_data, d_data_size);
     snprintf(msg, sizeof(msg), "ecall_online_ca_initialise returned %d", my_ret);
     ocall_debug_print(msg);
 
-    my_ret = ecall_online_u_set_cts_and_compute_ctres_pres_sres(cts_data, sizeof(cts_data));
+    uint8_t cts_data_unsealed[10 * 32 * 4] = {0};
+    size_t cts_data_unsealed_size = sizeof(cts_data_unsealed);
+    my_ret = ecall_online_t_unseal_cts(cts_data, cts_data_size, cts_data_unsealed, cts_data_unsealed_size);
+    snprintf(msg, sizeof(msg), "ecall_online_t_unseal_cts returned %d", my_ret);
+    ocall_debug_print(msg);
+
+    my_ret = ecall_online_u_set_cts_and_compute_ctres_pres_sres(cts_data_unsealed, sizeof(cts_data_unsealed));
     snprintf(msg, sizeof(msg), "ecall_online_u_set_cts_and_compute_ctres_pres_sres returned %d", my_ret);
     ocall_debug_print(msg);
 
@@ -2358,7 +2541,7 @@ int ecall_test() {
     snprintf(msg, sizeof(msg), "ecall_online_u_get_ctres_pres_sres returned %d", my_ret);
     ocall_debug_print(msg);
 
-    ocall_debug_print("ctres:\n");
+    /*ocall_debug_print("ctres:\n");
     for (int i = 0; i < sizeof(ctres_data); i++) {
         snprintf(msg, sizeof(msg), "0x%02x ", ctres_data[i]);
         ocall_print(msg);
@@ -2377,7 +2560,7 @@ int ecall_test() {
         snprintf(msg, sizeof(msg), "0x%02x ", ((uint8_t * )(&sres_data))[i]);
         ocall_print(msg);
     }
-    ocall_print("\n\n");
+    ocall_print("\n\n");*/
 
 
     my_ret = ecall_online_ca_set_ctres_pres_sres_and_compute_res(ctres_data, &pres_data, &sres_data);
@@ -2408,329 +2591,17 @@ int ecall_test() {
     }
     ocall_print("\n\n");
 
+    uint64_t decoded_result = 0;
+    my_ret = ecall_decode_result(result_data, &decoded_result);
+    snprintf(msg, sizeof(msg), "ecall_decode_result returned %d", my_ret);
+    ocall_debug_print(msg);
+    ocall_print("\n\n");
+    snprintf(msg, sizeof(msg), "decoded result: %lu", decoded_result);
+    ocall_debug_print(msg);
+
     ocall_debug_print("\n\n\n");
     ocall_debug_print("test exiting");
     ocall_debug_print("\n\n\n");
 
     return 0;
-
-/*    test_print();
-
-    sgx_status_t ret;
-
-    snprintf(msg, sizeof(msg), "hello value : %d", hello);
-    ocall_debug_print(msg);
-
-    hello = 1;
-
-    snprintf(msg, sizeof(msg), "hello value : %d", hello);
-    ocall_debug_print(msg);
-
-    *//* Test random number generation *//*
-    uint32_t rval = 0;
-    ret = sgx_read_rand((unsigned char *) &rval, sizeof(rval));
-    if (ret != SGX_SUCCESS) {
-        ocall_debug_print("sgx_read_rand failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    snprintf(msg, sizeof(msg), "random number: %u", rval);
-    ocall_debug_print(msg);
-
-    *//* Test IPP *//*
-    int psize = 0;
-    IppStatus pstatus;
-
-    // get IppsECCPState context size in bytes
-    pstatus = ippsECCPGetSizeStd256r1(&psize);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPGetSizeStd256r1 failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    snprintf(msg, sizeof(msg), "IppsECCPState size: %d", psize);
-    ocall_debug_print(msg);
-
-    // allocate memory for ec context
-    IppsECCPState *ec = (IppsECCPState *) malloc(psize);
-    if (ec == NULL) {
-        ocall_debug_print("malloc failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    // initialise ec context
-    pstatus = ippsECCPInitStd256r1(ec);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPInitStd256r1 failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsECCPInitStd256r1 succeeded");
-    }
-
-    // set ec context
-    pstatus = ippsECCPSetStd256r1(ec);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPSetStd256r1 failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsECCPSetStd256r1 succeeded");
-    }
-
-    // get ec order bit size
-    int ec_order_bit_size = 0;
-    pstatus = ippsECCPGetOrderBitSize(&ec_order_bit_size, ec);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPGetOrderBitSize failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    int ec_order_size = 1 + ((ec_order_bit_size - 1) / 8);
-
-    snprintf(msg, sizeof(msg), "EC order bit size: %d", ec_order_bit_size);
-    ocall_debug_print(msg);
-
-    snprintf(msg, sizeof(msg), "EC order size: %d", ec_order_size);
-    ocall_debug_print(msg);
-
-    // get IppsBigNumState context size in bytes
-    int bnsize = 0;
-
-    pstatus = ippsBigNumGetSize(ec_order_size, &bnsize);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumGetSize failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    snprintf(msg, sizeof(msg), "IppsBigNumState size: %d", bnsize);
-    ocall_debug_print(msg);
-
-    // allocate memory for bn
-    int cofactor = 0;
-
-    IppsBigNumState *tmp = (IppsBigNumState *) malloc(bnsize);
-    if (tmp == NULL) {
-        ocall_debug_print("malloc failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsBigNumInit(ec_order_size, tmp);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumInit failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    IppsBigNumState *q = (IppsBigNumState *) malloc(bnsize);
-    if (q == NULL) {
-        ocall_debug_print("malloc failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsBigNumInit(ec_order_size, q);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumInit failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    IppsBigNumState *gx = (IppsBigNumState *) malloc(bnsize);
-    if (gx == NULL) {
-        ocall_debug_print("malloc failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsBigNumInit(ec_order_size, gx);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumInit failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    IppsBigNumState *gy = (IppsBigNumState *) malloc(bnsize);
-    if (gy == NULL) {
-        ocall_debug_print("malloc failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsBigNumInit(ec_order_size, gy);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumInit failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    IppsBigNumState *d = (IppsBigNumState *) malloc(bnsize);
-    if (d == NULL) {
-        ocall_debug_print("malloc d failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsBigNumInit(ec_order_size, d);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumInit d failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    IppsBigNumState *e = (IppsBigNumState *) malloc(bnsize);
-    if (e == NULL) {
-        ocall_debug_print("malloc e failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsBigNumInit(ec_order_size, e);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsBigNumInit e failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    // get q, gx, gy
-    pstatus = ippsECCPGet(tmp, tmp, tmp, gx, gy, q, &cofactor, ec);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPGet failed");
-        ocall_debug_print(ippcpGetStatusString(pstatus));
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsECCPGet succeeded");
-    }
-
-    //free(tmp);
-
-    // get G
-
-    // get IppsECCPPoint context size in bytes
-    int ecpsize;
-    pstatus = ippsECCPPointGetSize(ec_order_bit_size, &ecpsize);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPPointGetSize failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    snprintf(msg, sizeof(msg), "IppsECCPPointState size: %d", ecpsize);
-    ocall_debug_print(msg);
-
-    // allocate memory for point context
-    IppsECCPPointState *G = (IppsECCPPointState *) malloc(ecpsize);
-    if (G == NULL) {
-        ocall_debug_print("malloc failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-
-    // initialise point context
-    pstatus = ippsECCPPointInit(ec_order_bit_size, G);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPPointInit failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsECCPPointInit succeeded");
-    }
-
-    // set point context
-    pstatus = ippsECCPSetPoint(gx, gy, G, ec);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsECCPSetPoint failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsECCPSetPoint succeeded");
-    }
-
-    // check point on ec
-    IppECResult cpres;
-    pstatus = ippsECCPCheckPoint(G, &cpres, ec);
-    if (pstatus != ippStsNoErr || cpres != ippECValid) {
-        ocall_debug_print("ippsECCPCheckPoint failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsECCPCheckPoint succeeded");
-    }
-
-    // generate d
-    Ipp32u ddata[ec_order_size / sizeof(Ipp32u)];
-    ret = sgx_read_rand((unsigned char *) &rval, ec_order_size);
-    if (ret != SGX_SUCCESS) {
-        ocall_debug_print("sgx_read_rand failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    }
-    pstatus = ippsSet_BN(IppsBigNumPOS, sizeof(ddata) / sizeof(Ipp32u), ddata, d);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsSet_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsSet_BN succeeded");
-    }
-
-    // generate e
-    pstatus = ippsModInv_BN(d, q, e);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsModInv_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsModInv_BN succeeded");
-    }
-
-
-    // check if inv of e == d
-    pstatus = ippsModInv_BN(e, q, tmp);
-    if (pstatus != ippStsNoErr) {
-        ocall_debug_print("ippsModInv_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsModInv_BN succeeded");
-    }
-    Ipp32u comres;
-    pstatus = ippsCmp_BN(tmp, d, &comres);
-    if (pstatus != ippStsNoErr || comres != IS_ZERO) {
-        ocall_debug_print("ippsCmp_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsCmp_BN succeeded");
-    }
-
-    pstatus = ippsCmpZero_BN(tmp, &comres);
-    if (pstatus != ippStsNoErr || comres != GREATER_THAN_ZERO) {
-        ocall_debug_print("ippsCmpZero_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsCmpZero_BN succeeded");
-    }
-
-    pstatus = ippsCmpZero_BN(d, &comres);
-    if (pstatus != ippStsNoErr || comres != GREATER_THAN_ZERO) {
-        ocall_debug_print("ippsCmpZero_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsCmpZero_BN succeeded");
-    }
-
-    pstatus = ippsCmpZero_BN(e, &comres);
-    if (pstatus != ippStsNoErr || comres != GREATER_THAN_ZERO) {
-        ocall_debug_print("ippsCmpZero_BN failed");
-        ocall_debug_print("\n\n\n");
-        return ERR_FAIL_SEAL;
-    } else {
-        ocall_debug_print("ippsCmpZero_BN succeeded");
-    }
-
-    ocall_debug_print("test exiting");
-    ocall_debug_print("\n\n\n");
-
-    return RET_SUCCESS;*/
 }

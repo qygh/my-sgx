@@ -36,9 +36,10 @@ void *online_t_handler(void *arg) {
     uint32_t n = (uint32_t) strtol(args.n, NULL, 10);
 
     // allocate memory for x, cts, res and result
+    size_t x_data_len = X_SIZE;
     size_t cts_data_len = cts_size_from_n(n);
 
-    uint8_t *x_data = (uint8_t *) calloc(X_SIZE, 1);
+    uint8_t *x_data = (uint8_t *) calloc(x_data_len, 1);
     uint8_t *cts_data = (uint8_t *) calloc(cts_data_len, 1);
     uint8_t *res_data = (uint8_t *) calloc(RES_SIZE, 1);
     uint8_t *result_data = (uint8_t *) calloc(RESULT_SIZE, 1);
@@ -57,7 +58,7 @@ void *online_t_handler(void *arg) {
     }
 
     // load x from file
-    sret = load_file(args.x_file, x_data, X_SIZE);
+    sret = load_file_maxlen(args.x_file, x_data, x_data_len);
     if (sret < 0) {
         error_print("Failed to load x from file");
 
@@ -70,9 +71,10 @@ void *online_t_handler(void *arg) {
 
         pthread_exit(NULL);
     }
+    x_data_len = sret;
 
     // load cts from file
-    sret = load_file(args.cts_file, cts_data, cts_data_len);
+    sret = load_file_maxlen(args.cts_file, cts_data, cts_data_len);
     if (sret < 0) {
         error_print("Failed to load cts from file");
 
@@ -85,6 +87,7 @@ void *online_t_handler(void *arg) {
 
         pthread_exit(NULL);
     }
+    cts_data_len = sret;
 
     // initialise common context
     ecall_status = ecall_common_initialise(eid, &ret, n);
@@ -102,7 +105,7 @@ void *online_t_handler(void *arg) {
     }
 
     // initialise online T context
-    ecall_status = ecall_online_t_initialise(eid, &ret, x_data);
+    ecall_status = ecall_online_t_initialise(eid, &ret, x_data, x_data_len);
     if (ecall_status != SGX_SUCCESS || ret < 0) {
         error_print("Failed to initialise online T context");
 
@@ -116,11 +119,11 @@ void *online_t_handler(void *arg) {
         pthread_exit(NULL);
     }
 
-    // online message 1: send cts to U
-    info_print("Online message 1: send cts to U");
-    sret = tcp_write(sockfd, cts_data, cts_data_len);
-    if (sret != cts_data_len) {
-        error_print("Failed to send cts to U");
+    // unseal cts
+    size_t cts_data_unsealed_len = cts_data_len - SEAL_ADDITIONAL_SIZE;
+    uint8_t *cts_data_unsealed = (uint8_t *) calloc(cts_data_unsealed_len, 1);
+    if (cts_data_unsealed == NULL) {
+        error_print("Failed to allocate memory for unsealed cts");
 
         sgx_destroy_enclave(eid);
         close(sockfd);
@@ -131,6 +134,40 @@ void *online_t_handler(void *arg) {
 
         pthread_exit(NULL);
     }
+
+    ecall_status = ecall_online_t_unseal_cts(eid, &ret, cts_data, cts_data_len, cts_data_unsealed,
+                                             cts_data_unsealed_len);
+    if (ecall_status != SGX_SUCCESS || ret < 0) {
+        error_print("Failed to unseal cts");
+
+        sgx_destroy_enclave(eid);
+        close(sockfd);
+        free(x_data);
+        free(cts_data);
+        free(res_data);
+        free(result_data);
+        free(cts_data_unsealed);
+
+        pthread_exit(NULL);
+    }
+
+    // online message 1: send cts to U
+    info_print("Online message 1: send cts to U");
+    sret = tcp_write(sockfd, cts_data_unsealed, cts_data_unsealed_len);
+    if (sret != cts_data_unsealed_len) {
+        error_print("Failed to send cts to U");
+
+        sgx_destroy_enclave(eid);
+        close(sockfd);
+        free(x_data);
+        free(cts_data);
+        free(res_data);
+        free(result_data);
+        free(cts_data_unsealed);
+
+        pthread_exit(NULL);
+    }
+    free(cts_data_unsealed);
 
     // online message 3: receive res from CA via U
     info_print("Online message 3: receive res from CA via U");

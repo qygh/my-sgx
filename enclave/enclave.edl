@@ -73,20 +73,23 @@ enclave {
         );
 
         /**
-         * @brief      Get x and cts
+         * @brief           Get x and cts
          *
-         * @param[out]  x_data          x, should be 32 bytes
+         * @param[out]      x_data_sealed           Sealed x
          *
-         * @param[out]  cts_data        cts
+         * @param[in, out]  x_data_sealed_size      Size of sealed x buffer
          *
-         * @param       cts_data_size   Size of cts, should be n * 32 * 4 bytes
+         * @param[out]      cts_data_sealed         Sealed cts
          *
-         * @return      0 if successful, negative otherwise.
+         * @param[in, out]  cts_data_sealed_size    Size of sealed cts buffer
+         *
+         * @return          0 if successful, negative otherwise.
          */
         public int ecall_offline_t_get_x_and_cts(
-            [out, size=32]uint8_t *x_data,
-            [out, size=cts_data_size]uint8_t *cts_data,
-            size_t cts_data_size
+            [user_check]uint8_t *x_data_sealed,
+            [in, out]size_t *x_data_sealed_size,
+            [user_check]uint8_t *cts_data_sealed,
+            [in, out]size_t *cts_data_sealed_size
         );
 
         /**
@@ -109,18 +112,21 @@ enclave {
         );
 
         /**
-         * @brief       Get d and Ws
+         * @brief           Get d and Ws
          *
-         * @param[out]  d_data          d, should be 32 bytes
+         * @param[out]      d_data_sealed           Sealed d
          *
-         * @param[out]  Ws_data         Ws
+         * @param[in, out]  d_data_sealed_size      Size of sealed d data
          *
-         * @param       Ws_data_size    Size of Ws_data, should be n * 32 * 2 bytes
+         * @param[out]      Ws_data                 Ws
          *
-         * @return      0 if successful, negative otherwise.
+         * @param           Ws_data_size            Size of Ws_data, should be n * 32 * 2 bytes
+         *
+         * @return          0 if successful, negative otherwise.
          */
         public int ecall_offline_ca_get_d_and_Ws(
-            [out, size=32]uint8_t *d_data,
+            [user_check]uint8_t *d_data_sealed,
+            [in, out]size_t *d_data_sealed_size,
             [out, size=Ws_data_size]uint8_t *Ws_data,
             size_t Ws_data_size
         );
@@ -128,12 +134,35 @@ enclave {
         /**
          * @brief       Initialise context for online T
          *
-         * @param[in]   x_data    x
+         * @param[in]   x_data_sealed       Sealed x
+         *
+         * @param       x_data_sealed_size  Size of sealed x data
          *
          * @return      0 if successful, negative otherwise.
          */
         public int ecall_online_t_initialise(
-            [in, size=32]const uint8_t *x_data
+            [in, size=x_data_sealed_size]const uint8_t *x_data_sealed,
+            size_t x_data_sealed_size
+        );
+
+        /**
+         * @brief       Unseal cts
+         *
+         * @param[in]   cts_data_sealed         Sealed cts
+         *
+         * @param       cts_data_sealed_size    Size of sealed cts data
+         *
+         * @param[out]  cts_data                Unsealed cts
+         *
+         * @param       cts_data_size           Size of unsealed cts data, should be n * 32 * 4 bytes
+         *
+         * @return      0 if successful, negative otherwise.
+         */
+        public int ecall_online_t_unseal_cts(
+            [in, size=cts_data_sealed_size]const uint8_t *cts_data_sealed,
+            size_t cts_data_sealed_size,
+            [out, size=cts_data_size]uint8_t *cts_data,
+            size_t cts_data_size
         );
 
         /**
@@ -195,12 +224,15 @@ enclave {
         /**
          * @brief       Initialise context for online CA
          *
-         * @param[in]   d_data      d
+         * @param[in]   d_data_sealed       Sealed d
+         *
+         * @param       d_data_sealed_size  Size of sealed d data
          *
          * @return      0 if successful, negative otherwise.
          */
         public int ecall_online_ca_initialise(
-            [in, size=32]const uint8_t *d_data
+            [in, size=d_data_sealed_size]const uint8_t *d_data_sealed,
+            size_t d_data_sealed_size
         );
 
         /**

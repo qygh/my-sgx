@@ -38,10 +38,11 @@ void *offline_ca_handler(void *arg) {
     // allocate memory for ws, Ws and d
     size_t ws_data_len = ws_size_from_n(n);
     size_t Ws_data_len = Ws_size_from_n(n);
+    size_t d_data_len = D_SIZE;
 
     uint8_t *ws_data = (uint8_t *) calloc(ws_data_len, 1);
     uint8_t *Ws_data = (uint8_t *) calloc(Ws_data_len, 1);
-    uint8_t *d_data = (uint8_t *) calloc(D_SIZE, 1);
+    uint8_t *d_data = (uint8_t *) calloc(d_data_len, 1);
 
     if (ws_data == NULL || Ws_data == NULL || d_data == NULL) {
         error_print("Failed to allocate memory");
@@ -113,7 +114,7 @@ void *offline_ca_handler(void *arg) {
     }
 
     // get d and Ws
-    ecall_status = ecall_offline_ca_get_d_and_Ws(eid, &ret, d_data, Ws_data, Ws_data_len);
+    ecall_status = ecall_offline_ca_get_d_and_Ws(eid, &ret, d_data, &d_data_len, Ws_data, Ws_data_len);
     if (ecall_status != SGX_SUCCESS || ret < 0) {
         error_print("Failed to get d and Ws");
 
@@ -142,7 +143,7 @@ void *offline_ca_handler(void *arg) {
     }
 
     // save d to file
-    sret = save_file(D_FILE, d_data, D_SIZE);
+    sret = save_file(D_FILE, d_data, d_data_len);
     if (sret < 0) {
         error_print("Failed to save d to file");
 
