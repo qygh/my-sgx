@@ -1,66 +1,99 @@
-# sgx-wallet
-[![license](https://img.shields.io/badge/license-GPL3-brightgreen.svg)](https://github.com/asonnino/sgx-wallet/blob/master/LICENSE)
+# my-sgx
+[![license](https://img.shields.io/badge/license-GPL3-brightgreen.svg)](https://github.com/qygh/my-sgx/blob/master/LICENSE)
 
-This is a simple password-wallet application based on Intel SGX for linux. Intel also provides a full [tutorial](https://software.intel.com/en-us/articles/introducing-the-intel-software-guard-extensions-tutorial-series) and [source code](https://github.com/IntelSoftware/Tutorial-Password-Manager-with-Intel-SGX) for Windows using Visual Studio.
+This is a simple implementation of the [PAPEETE (Private, Authorised, fast PErsonal gEnomic TEsting)](http://discovery.ucl.ac.uk/10049432/) protocol using [Intel SGX](https://software.intel.com/en-us/sgx) for Linux.
 
 
 ## Pre-requisites
-Ensure to have the Intel SGX Linux [drivers](https://github.com/intel/linux-sgx-driver) and [SDK](https://github.com/intel/linux-sgx) installed.
+  - Ensure SGX is enabled in the BIOS.
+
+  - Ensure to have the Intel SGX Linux [drivers](https://github.com/intel/linux-sgx-driver) installed.
+
+  - Ensure to have [SDK **2.3**](https://download.01.org/intel-sgx/linux-2.3) and [PSW](https://github.com/intel/linux-sgx#install-the-intelr-sgx-psw) installed.
 
 
-## Install
-Install **sgx-wallet** as follows:
+## Build
+Build **my-sgx** as follows:
 
   - Source the Intel SGX SDK as described [here](https://github.com/intel/linux-sgx#install-the-intelr-sgx-sdk-1); if your SDK installation path is `/opt/intel/sgxsdk/`, run:
 ```
 $ source /opt/intel/sgxsdk/environment
 ```
 
-  - Clone and build the source code:
+  - To build in **Simulation Mode** (non-SGX version):
 ```
-$ git clone https://github.com/asonnino/sgx-wallet.git
-$ cd sgx-wallet
+$ git clone git clone https://github.com/qygh/my-sgx
+$ cd my-sgx
 $ make
+```
+
+  - To build in **Hardware Mode** (SGX version):
+```
+$ git clone git clone https://github.com/qygh/my-sgx
+$ cd my-sgx
+$ make SGX_MODE=HW SGX_PRERELEASE=1
 ```
 
 
 ## Usage
-**sgx-wallet** comes with a simple cli that can be run with the following options:
+  - Remember to source the SGX SDK before running non-SGX version of the application:
+```
+$ source /opt/intel/sgxsdk/environment
+```
+
+**my-sgx** comes with a simple command-line interface that can be run with the following options:
   - Show help:
 ```
-sgx-wallet -h
+$ ./my-sgx
 ```
 
-  - Show version:
+  - Run self-test:
 ```
-sgx-wallet -v
-```
-
-  - Run tests:
-```
-sgx-wallet -t
+$ ./my-sgx -m test
 ``` 
 
-  - Create a new wallet with master-password `<master-passowrd>`:
+  - Decode result into human-readable format from raw result file `result.data`:
 ```
-sgx-wallet -n master-password
+$ ./my-sgx -m decode_result -s result result.data
 ``` 
 
-  - Change current master-password to `<new-master-password>`:
+  - Run as Testing Facility in offline phase with weights file `ws.data` containing `n` weights and Certification Authority `ca_hostname` on port `ca_port`:
 ```
-sgx-wallet -p master-password -c new-master-password
+$ ./my-sgx -m offline_t -h ca_hostname -p ca_port -n n -w ws.data
 ``` 
 
-  - Add a new item to the wallet with title `<item_title>`, username `<item_username>`, and password `<item_password>`:
+  - Run as Certification Authority in offline phase with listening port `ca_port` and `n` weights:
 ```
-sgx-wallet -p master-password -a -x item_title -y item_username -z item_password
+$ ./my-sgx -m offline_ca -b ca_port -n n
 ``` 
 
-  - Remove item at index `<item_index>` from the wallet:
+  - Run as User in online phase with Certification Authority `ca_hostname` on port `ca_port`, Testing Facility `t_hostname` on port `t_port` and SNPs file `snps.data` containing `n` SNPs:
 ```
-sgx-wallet -p master-password -r item_index
+$ ./my-sgx -m online_u -h ca_hostname -p ca_port -i t_hostname -q t_port -n n -s snps.data
 ``` 
-The wallet data are saved in a file called `wallet.seal` in the same directory as the main application. Note that you can have only one `wallet.seal` file, and attempting to call twice `sgx-wallet -n master-password` will result in an error.
+
+  - Run as Testing Facility in online phase with listening port `t_port`, the key file `x.data` and encrypted and authorised weights file `cts.data` containing `n` weights:
+```
+$ ./my-sgx -m online_t -b t_port -n n -x x.data -c cts.data
+``` 
+
+  - Run as Certification Authority in online phase with listening port `ca_port`, the key file `d.data` and `n` SNPs/weights:
+```
+$ ./my-sgx -m online_ca -b ca_port -n n -d d.data
+``` 
+
+
+## Format for weights and SNPs file
+  - Each weight is represented as a 32-bit unsigned integer with **little-endian** byte order. The hexadecimal values of a file containing the 5 weights `1, 2, 5, 32, 256` should be:
+```
+0x01 0x00 0x00 0x00 0x02 0x00 0x00 0x00 0x05 0x00 0x00 0x00 0x20 0x00 0x00 0x00 0x00 0x01 0x00 0x00
+```
+
+  - Each SNP can have value 0, 1 or 2 and is represented as a single byte. The hexadecimal values of a file containing the 5 SNPs `0, 1, 2, 0, 2` should be:
+```
+0x00 0x01 0x02 0x00 0x02
+```
+
 
 ## Contribute
 Any help is welcome through PRs!
