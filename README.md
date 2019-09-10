@@ -7,9 +7,9 @@ This is a simple implementation of the [PAPEETE (Private, Authorised, fast PErso
 ## Pre-requisites
   - Ensure SGX is enabled in the BIOS.
 
-  - Ensure to have the Intel SGX Linux [drivers](https://github.com/intel/linux-sgx-driver) installed.
+  - Ensure Intel SGX Linux [driver](https://github.com/intel/linux-sgx-driver) is installed.
 
-  - Ensure to have [SDK **2.3**](https://download.01.org/intel-sgx/linux-2.3) and [PSW](https://github.com/intel/linux-sgx#install-the-intelr-sgx-psw) installed.
+  - Ensure [SDK **2.3**](https://download.01.org/intel-sgx/linux-2.3) and [PSW](https://github.com/intel/linux-sgx#install-the-intelr-sgx-psw) are installed.
 
 
 ## Build
